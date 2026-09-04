@@ -1,4 +1,4 @@
-import { AlertTriangle, RefreshCw, X } from 'lucide-react';
+import { AlertTriangle, X } from 'lucide-react';
 import { pluralizeCategory } from '../../lib/rotation';
 
 export interface RotationWarningProps {
@@ -30,9 +30,8 @@ export function RotationWarning({
       </span>
 
       <div className="min-w-0 flex-1">
-        <h3 className="flex items-center gap-2 text-sm font-bold sm:text-base">
-          <RefreshCw className="h-4 w-4 shrink-0" aria-hidden="true" />
-          <span>🔄 Crop Rotation Warning: {pluralizeCategory(category)} planted here last year!</span>
+        <h3 className="text-sm font-bold sm:text-base">
+          Crop Rotation Warning: {pluralizeCategory(category)} planted here last year!
         </h3>
         <p className="mt-1 max-w-prose text-sm leading-relaxed text-amber-800">
           {squares} in {bedName} {conflictCount === 1 ? 'holds' : 'hold'} another {category.toLowerCase()} — look
