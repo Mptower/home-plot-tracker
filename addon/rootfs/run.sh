@@ -5,6 +5,14 @@
 # "/bin/sh\r", cannot find it, and the container exits immediately with a bare
 # "no such file or directory" that names neither this file nor the shell. See
 # the repository's .gitattributes.
+#
+# Do not add date or time logic to this file. Supervisor injects the host
+# timezone as TZ, but this image is plain node:22-alpine and Alpine ships no
+# /usr/share/zoneinfo, so busybox cannot resolve the name and silently reports
+# UTC -- measured in a real add-on install, where `date` said UTC at the same
+# instant Node said America/Chicago. A timestamped log line written here would
+# be quietly hours wrong. Node carries its own timezone database and is not
+# affected, so anything time-dependent belongs in the server, not the shell.
 set -eu
 
 # Bind inside the container only. Nothing is published to the host: reaching the

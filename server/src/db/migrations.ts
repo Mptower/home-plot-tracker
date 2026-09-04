@@ -8,9 +8,9 @@
  *    edited migration silently never runs again on an existing database.
  * 2. Keep each `up` idempotent (`IF NOT EXISTS`) so a half-applied database from
  *    a crash can still be brought forward.
- * 3. Nothing about the runner needs to change to add a table: a `settings` table
- *    for preferences, or a `plantings` table if beds ever grow history, would
- *    just be versions 2 and 3.
+ * 3. Nothing about the runner needs to change to add a table: a `plantings` table
+ *    if beds ever grow history would just be the next version, exactly as
+ *    `ha_state` is version 3.
  */
 import type { Database } from './open.ts';
 
@@ -100,6 +100,34 @@ export const MIGRATIONS: readonly Migration[] = [
       for (const collection of ['seeds', 'beds', 'harvests']) {
         seed.run(collection);
       }
+    },
+  },
+  {
+    version: 3,
+    name: 'ha_state',
+    up(db) {
+      // Somewhere durable for the Home Assistant integration to remember what it
+      // has already done. Exactly one thing needs this today: which cold snaps
+      // have already been notified about.
+      //
+      // It has to survive a restart, and it has to live in DATA_DIR. An add-on
+      // restarts on every update, every Home Assistant reboot and every time she
+      // changes an option — and if the record of "I already warned her about
+      // Saturday night" were in memory, each of those would send the same
+      // warning again. A frost alert she has already read and acted on,
+      // arriving a second and third time, is precisely the nuisance that trains
+      // someone to swipe warnings away without reading them.
+      //
+      // A key/value table rather than columns: the shape of what is worth
+      // remembering here will change, and none of it is queried by anything but
+      // key.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ha_state (
+          key        TEXT PRIMARY KEY,
+          value      TEXT NOT NULL,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
     },
   },
 ];

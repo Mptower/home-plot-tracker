@@ -18,6 +18,7 @@ import type { FirstRunPhase } from './components/FirstRunCard';
 import { GardenLoading } from './components/GardenLoading';
 import { GardenUnavailable } from './components/GardenUnavailable';
 import { SyncBanner } from './components/SyncBanner';
+import { FrostBanner } from './components/FrostBanner';
 import { useGardenData } from './hooks/useGardenData';
 import { ApiError } from './lib/apiClient';
 import type { ApiIssue } from './lib/apiClient';
@@ -129,6 +130,8 @@ export default function App() {
 
           {status.phase === 'ready' && (
             <>
+              <FrostBanner />
+
               <SyncBanner status={status} onRetry={retrySave} />
 
               <ConflictChooser

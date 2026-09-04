@@ -76,5 +76,33 @@ export const MIGRATIONS = [
             }
         },
     },
+    {
+        version: 3,
+        name: 'ha_state',
+        up(db) {
+            // Somewhere durable for the Home Assistant integration to remember what it
+            // has already done. Exactly one thing needs this today: which cold snaps
+            // have already been notified about.
+            //
+            // It has to survive a restart, and it has to live in DATA_DIR. An add-on
+            // restarts on every update, every Home Assistant reboot and every time she
+            // changes an option — and if the record of "I already warned her about
+            // Saturday night" were in memory, each of those would send the same
+            // warning again. A frost alert she has already read and acted on,
+            // arriving a second and third time, is precisely the nuisance that trains
+            // someone to swipe warnings away without reading them.
+            //
+            // A key/value table rather than columns: the shape of what is worth
+            // remembering here will change, and none of it is queried by anything but
+            // key.
+            db.exec(`
+        CREATE TABLE IF NOT EXISTS ha_state (
+          key        TEXT PRIMARY KEY,
+          value      TEXT NOT NULL,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+        },
+    },
 ];
 //# sourceMappingURL=migrations.js.map

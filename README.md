@@ -37,6 +37,17 @@ addon/     the Home Assistant add-on
 exactly the shapes the client renders. It builds to `dist/` with declarations,
 which is why every root script builds it first.
 
+**`shared/` is types only, and this is load-bearing.** Everything the server
+imports from it is an `import type`, which TypeScript erases at compile time.
+The add-on image vendors a flattened copy of `server/dist/src` with `express` as
+its only dependency and no `@hpt/shared` on disk at all — so a *value* imported
+from `shared/` would pass typecheck, pass the tests, run fine under
+`npm run dev`, and then crash the add-on on boot with `ERR_MODULE_NOT_FOUND`.
+Shared runtime logic belongs in `server/src/`; `shared/` gets the type that
+describes it. The frost model is the worked example: the wire types are in
+[`shared/src/homeAssistant.ts`](shared/src/homeAssistant.ts) and the logic that
+produces them is in [`server/src/ha/`](server/src/ha/).
+
 React-specific prop contracts (`SeedVaultViewProps` and friends) stay in
 [`client/src/types.ts`](client/src/types.ts), which re-exports the shared types
 so no view component needed an import change.
@@ -108,6 +119,7 @@ Three collections, each with exactly two operations:
 | `PUT`  | `/api/beds`             | replaces it; requires `If-Match`        |
 | `GET`  | `/api/harvests`         | the full `HarvestLog[]`, plus an `ETag` |
 | `PUT`  | `/api/harvests`         | replaces it; requires `If-Match`        |
+| `GET`  | `/api/home-assistant`   | the frost watch, if there is one        |
 | `POST` | `/api/import`           | first-run migration into an empty garden |
 
 Request and response bodies for the collections are bare JSON arrays. The
@@ -360,6 +372,22 @@ runs with none set. See [`.env.example`](.env.example).
 | `LOG_REQUESTS`  | `true`           | one line per request                            |
 | `NODE_ENV`      | `production`     | anything else disables long-lived asset caching |
 
+Plus the Home Assistant variables, all optional and all inert without a
+`SUPERVISOR_TOKEN`. In the add-on these are set from the Home Assistant UI
+instead, and those options take precedence over the environment.
+
+| Variable                  | Default                            | Does                                    |
+| ------------------------- | ---------------------------------- | --------------------------------------- |
+| `SUPERVISOR_TOKEN`        | —                                  | injected by Supervisor; its presence is what enables the integration |
+| `SUPERVISOR_URL`          | `http://supervisor`                | where the Supervisor API lives          |
+| `HA_WEATHER_ENTITY`       | `weather.forecast_home`            | forecast source; must support forecasts |
+| `HA_NOTIFY_SERVICE`       | `notify.mobile_app_julie_s_phone`  | where a frost warning is sent           |
+| `HA_SENSOR_PREFIX`        | `garden`                           | prefix for the four published sensors   |
+| `HA_FROST_NOTIFICATIONS`  | `true`                             | `false` keeps the banner, stops the phone |
+| `HA_QUIET_HOURS_START`    | `21:00`                            | local time, 24-hour                     |
+| `HA_QUIET_HOURS_END`      | `07:00`                            | local time, 24-hour                     |
+| `ADDON_OPTIONS_PATH`      | `/data/options.json`               | add-on options file; the tests redirect it |
+
 `DATA_DIR` is the important one. As a Home Assistant add-on it is set to
 `/data`, the persistent volume HA's own backups snapshot — put the database
 anywhere else and the backups quietly contain no garden. Locally it defaults to
@@ -404,6 +432,121 @@ bar.
 - `BASE_PATH` mounts the API and the static handler under a fixed prefix. Not
   needed for ingress; kept for running behind a plain reverse proxy that does
   not strip.
+
+## Home Assistant integration
+
+When it runs as an add-on, the tracker reads the weather forecast, warns about
+frost, and publishes the harvest totals back as sensors.
+
+**None of it is required.** The whole integration is switched off unless
+`SUPERVISOR_TOKEN` is in the environment, which only happens inside the add-on.
+On a laptop `npm run dev` constructs no client, schedules no timers and opens no
+sockets — the frost banner simply never renders, exactly as it will not render
+on a warm week in July. There is no error state and no spinner, because there is
+nothing being waited for.
+
+### Frost warnings
+
+The forecast is polled every 15 minutes and cached. Overnight lows are read in
+three bands, in °F:
+
+| Band          | Low     | What it means                                        |
+| ------------- | ------- | ---------------------------------------------------- |
+| `advisory`    | ≤ 36 °F | Frost is possible — plant level runs 3–5 °F below the forecast on a still, clear night |
+| `frost`       | ≤ 32 °F | Tender crops will be damaged                          |
+| `hard_freeze` | ≤ 28 °F | Hardy crops are in trouble too                        |
+
+A warning names what is actually planted. Every seed packet carries a
+`category`, and each category maps to a tenderness:
+
+| Tenderness | Categories                                       |
+| ---------- | ------------------------------------------------ |
+| `tender`   | Nightshade, Cucurbit, Legume, Herb               |
+| `hardy`    | Brassica, Allium, Root, Leafy Green              |
+| `unknown`  | anything else                                    |
+
+`Herb` is the one real compromise: it covers basil, which collapses at 40 °F,
+and rosemary, which is fine under snow. It is mapped `tender` because basil is
+the herb people actually lose.
+
+An unrecognised category is **never guessed at**. It cannot trigger a warning,
+but it is counted and shown, so the banner says "3 squares have no crop family
+recorded" rather than quietly speaking for them.
+
+Below a hard freeze, a warning only appears if something tender is genuinely in
+the ground. A frost in April with nothing planted is not news.
+
+### The sensors
+
+Four entities, re-posted every 5 minutes and whenever the garden changes:
+
+| Entity                          | Unit    | Classes                                 |
+| ------------------------------- | ------- | --------------------------------------- |
+| `sensor.garden_harvest_weight`  | `lb`    | `device_class: weight`, `state_class: measurement` |
+| `sensor.garden_harvest_count`   | `items` | `state_class: measurement`              |
+| `sensor.garden_top_variety`     | —       | heaviest variety, with weight and count |
+| `sensor.garden_frost_risk`      | —       | `device_class: enum`                    |
+
+Four rather than forty: a sensor per variety would be entity spam that nothing
+here could ever clear up, because `POST /api/states` can create entities but not
+delete them.
+
+Two consequences of that API are worth knowing:
+
+- **These entities do not survive a Home Assistant restart.** They go into the
+  state machine and never reach the entity registry, and nothing tells us it
+  happened. Hence the 5-minute heartbeat rather than publishing on change alone.
+- **It would happily overwrite somebody else's entity.** So each id is read once
+  at boot and anything already there that this add-on did not create is left
+  alone, with a log line pointing at the `sensor_prefix` option.
+
+The weight is `state_class: measurement`, deliberately. `total_increasing` would
+be actively wrong — correcting a harvest row makes the number drop, which Home
+Assistant reads as a meter reset and folds into the long-term sum permanently.
+`total` handles decreases properly but assumes continuity these entities do not
+have, given they vanish on every restart.
+
+The totals span **every** harvest, not the current calendar year, because that
+is what the Harvest Log's own "Season so far" strip does. Two numbers with the
+same name disagreeing would be worse than one whose window is generous, and
+`first_harvest` / `last_harvest` are published as attributes so the span is
+never a mystery.
+
+### The notification
+
+At most one per cold snap to `notify.mobile_app_julie_s_phone`, and every rule
+in [`server/src/ha/notifier.ts`](server/src/ha/notifier.ts) exists to *suppress*
+one. A warning she learns to swipe away is worse than no warning, because it
+takes the real one with it.
+
+- One send per night. The forecast is read 96 times a day; this is the rule that
+  stops that becoming 96 notifications.
+- A second only if the band gets *worse*. Capped at two, so a forecast wobbling
+  across a boundary cannot ratchet.
+- Nothing tender planted, nothing sent — except at a hard freeze.
+- Quiet hours 21:00–07:00, **unless** the frost lands within 12 hours. A frost
+  discovered at 10pm for 4am is exactly the one worth buzzing for; she can still
+  go out and cover the beds.
+- All of it persisted in SQLite, not memory — the add-on restarts on every
+  update and every Home Assistant reboot, and each of those would otherwise
+  re-announce a frost she has already dealt with.
+
+### How it stays out of the way
+
+The garden never waits on Home Assistant:
+
+- Everything is polled on a timer and cached. `GET /api/home-assistant` answers
+  from that cache plus a local database read, so no request that renders her
+  data can touch the network.
+- Every call times out in 5 seconds and none of them can throw.
+- A write returns *before* the republish is queued, and the republish is
+  debounced 3 seconds behind it.
+- If Home Assistant is unreachable the endpoint returns
+  `{ available: false, reason: 'unreachable', frost: null }` with a 200. The
+  banner renders nothing. The garden behaves exactly as it does on a laptop.
+
+`SUPERVISOR_TOKEN` never leaves the server. The client gets one purpose-built
+endpoint containing only what it needs to draw the banner.
 
 ## Deploying
 
@@ -525,6 +668,17 @@ HTTP and SQLite rather than mocks of them. Coverage:
 | `import.test.ts`        | the emptiness guard, reported counts, partial payloads      |
 | `transactions.test.ts`  | a failed write leaving the previous collection intact       |
 | `static.test.ts`        | cache headers, SPA fallback, mounting under a prefix        |
+| `frost.test.ts`         | the tenderness map, the three bands, which night a low belongs to |
+| `ha-sensors.test.ts`    | the exact published payloads, rounding, the collision guard |
+| `ha-notify.test.ts`     | one per snap, escalation, quiet hours, surviving a restart   |
+| `ha-absent.test.ts`     | no Home Assistant at all: no client, no timers, no sockets   |
+| `ha-degraded.test.ts`   | Home Assistant throwing, timing out, 502ing or returning HTML |
+
+The Home Assistant tests run against a fake Supervisor
+([`fakeHomeAssistant`](server/test/helpers.ts)) rather than a live instance,
+which is what makes the interesting rules testable at all — and means the suite
+never opens a socket to anything. `ha-absent.test.ts` proves the degrade path by
+wiring the fake in *without* a token and then asserting its call log is empty.
 
 ## Migration phases
 
@@ -751,6 +905,7 @@ Shared building blocks:
 
 ```
 shared/src/index.ts               domain types + constants, the contract
+shared/src/homeAssistant.ts       the frost wire types (types only — see above)
 
 client/
 ├── index.html
@@ -761,6 +916,7 @@ client/
     ├── index.css                 Tailwind entry + base layer
     ├── types.ts                  re-exports @hpt/shared + view prop contracts
     ├── hooks/useGardenData.ts    API-backed state, optimistic saves, merges
+    ├── hooks/useFrostWatch.ts    polls the frost endpoint; null when absent
     ├── lib/
     │   ├── api.ts                base-path-aware API URLs
     │   ├── apiClient.ts          typed fetch layer, versions and failures
@@ -770,11 +926,13 @@ client/
     │   ├── seedData.ts           DEFAULT_SEEDS / DEFAULT_BEDS / DEFAULT_HARVESTS
     │   ├── categoryTheme.ts      shared crop-family colour palette
     │   ├── germination.ts        seed-age and viability estimates
+    │   ├── frostWatch.ts         reads /api/home-assistant, null on any failure
     │   ├── rotation.ts           layout edits + crop-rotation conflicts
     │   └── harvest.ts            day grouping, totals, local date parsing
     └── components/
         ├── Sidebar.tsx           + SyncStatus.tsx (the live save footer)
         ├── SyncBanner.tsx        offline and save-failure notices
+        ├── FrostBanner.tsx       the amber frost warning, dismissible per event
         ├── ConflictChooser.tsx   per-item "changed on another device"
         ├── FirstRunCard.tsx      the one-time copy-across offer
         ├── GardenLoading.tsx     quiet skeleton, only after 250ms
@@ -793,11 +951,21 @@ server/
 │   ├── validation.ts             every write is checked here
 │   ├── static.ts                 client hosting, SPA fallback, base path
 │   ├── http.ts                   small response helpers
-│   ├── routes/api.ts             the eight endpoints
+│   ├── routes/api.ts             the nine endpoints
+│   ├── ha/                       everything Home Assistant, all optional
+│   │   ├── service.ts            the poller, the cache, the lifecycle
+│   │   ├── client.ts             Supervisor HTTP; times out, never throws
+│   │   ├── forecast.ts           get_forecasts, normalised to °F
+│   │   ├── frost.ts              the bands, and which night a low belongs to
+│   │   ├── tenderness.ts         crop family to cold tolerance
+│   │   ├── sensors.ts            the four published entities
+│   │   ├── notifier.ts           the anti-nuisance rules
+│   │   └── options.ts            add-on options, with env as the fallback
 │   └── db/
 │       ├── open.ts               open, pragmas, withTransaction
 │       ├── migrations.ts         the numbered list
 │       ├── migrate.ts            the runner
+│       ├── haState.ts            small persisted keys, e.g. what was notified
 │       └── collections.ts        list/replace for each collection
 └── test/                         node:test suites
 
