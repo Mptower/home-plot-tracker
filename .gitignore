@@ -17,8 +17,8 @@ dist-ssr
 .env.*
 !.env.example
 
-# Runtime data — never commit these. The database holds the password hash and
-# session records, and uploads holds harvest photos.
+# Runtime data — never commit these. The database is the single source of truth
+# for the garden; the -wal and -shm files beside it are part of it.
 *.db
 *.db-shm
 *.db-wal

@@ -1,10 +1,13 @@
 /**
- * Shared domain types and prop contracts for The Home Plot Tracker.
+ * Domain types shared by the browser client and the Node server.
  *
- * Every feature view consumes state that is owned by `App` and persisted through
- * `useLocalStorage`, so all mutations flow through the setters defined here.
+ * This package is the single source of truth for the shapes that travel over
+ * the API. It is deliberately free of framework imports — no React, no Express —
+ * so both sides can depend on it without dragging the other's runtime in.
+ *
+ * The React prop contracts (`SeedVaultViewProps` and friends) stay in
+ * `client/src/types.ts` because they are a client concern.
  */
-import type { Dispatch, SetStateAction } from 'react';
 
 export interface SeedPacket {
   id: string;
@@ -56,24 +59,14 @@ export const STORAGE_KEYS = {
   harvests: 'hpt.harvests',
 } as const;
 
-export interface SeedVaultViewProps {
-  seeds: SeedPacket[];
-  setSeeds: Dispatch<SetStateAction<SeedPacket[]>>;
-}
+/** The three collections the API exposes. */
+export const COLLECTION_NAMES = ['seeds', 'beds', 'harvests'] as const;
 
-export interface BedPlannerViewProps {
+export type CollectionName = (typeof COLLECTION_NAMES)[number];
+
+/** Everything the app persists, as one document. Shape of the import payload. */
+export interface GardenSnapshot {
+  seeds: SeedPacket[];
   beds: GardenBed[];
-  setBeds: Dispatch<SetStateAction<GardenBed[]>>;
-  seeds: SeedPacket[];
-}
-
-export interface HarvestLogViewProps {
   harvests: HarvestLog[];
-  setHarvests: Dispatch<SetStateAction<HarvestLog[]>>;
-  seeds: SeedPacket[];
-}
-
-export interface SidebarProps {
-  activeView: ViewId;
-  onChange: (view: ViewId) => void;
 }
