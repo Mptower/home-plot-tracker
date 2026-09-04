@@ -1,5 +1,6 @@
 import { LayoutGrid, Leaf, Scale, Sprout } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { SyncStatus } from './SyncStatus';
 import type { SidebarProps, ViewId } from '../types';
 
 interface NavItem {
@@ -15,7 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'harvest', label: 'Harvest Log', description: 'Weigh the yield', icon: Scale },
 ];
 
-export function Sidebar({ activeView, onChange }: SidebarProps) {
+export function Sidebar({ activeView, onChange, status, onRetry }: SidebarProps) {
   return (
     <aside className="sticky top-0 flex h-screen w-20 shrink-0 flex-col border-r border-panel-edge bg-panel-rail/95 shadow-sm backdrop-blur-md md:w-72">
       <div className="flex items-center gap-3 px-4 py-6 md:px-6">
@@ -65,9 +66,7 @@ export function Sidebar({ activeView, onChange }: SidebarProps) {
         })}
       </nav>
 
-      <p className="hidden border-t border-panel-edge px-6 py-4 text-xs text-stone-400 md:block">
-        Saved locally on this device
-      </p>
+      <SyncStatus status={status} onRetry={onRetry} />
     </aside>
   );
 }

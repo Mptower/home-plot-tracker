@@ -7,17 +7,18 @@ logging every harvest.
 
 The app began as a pure client-side SPA that kept everything in the browser's
 `localStorage`. That is per-browser-profile: a phone in the garden and a laptop
-indoors are two separate datastores that silently diverge. It is being moved to
-a small self-hosted server so there is one source of truth.
+indoors are two separate datastores that silently diverge. It now runs against a
+small self-hosted server, so there is one source of truth.
 
 It is deployed as a **Home Assistant add-on behind HA ingress**, which
 authenticates every request against the user's Home Assistant session. That is
 why the app has no login of its own, and why both halves are careful to work
 under an arbitrary URL prefix.
 
-This repo is mid-migration. **The server and its API exist and are complete
-(phase 1); the client still reads and writes `localStorage` until phase 3
-rewires it.** See [Migration phases](#migration-phases).
+**The server and its API are complete (phase 1), and the client reads and writes
+them rather than `localStorage` (phase 3).** A browser that still holds the old
+data is offered a one-time copy across, and never has it deleted. See
+[Migration phases](#migration-phases).
 
 ## Repository layout
 
@@ -117,8 +118,9 @@ HarvestLogView     { harvests, setHarvests, seeds }
 ```
 
 `GET` is the read half of that pair and `PUT` is the write half, so phase 3
-replaces the `useLocalStorage` hook with a fetching one and no view component
-changes at all.
+replaced the `useLocalStorage` hook with a fetching one
+([`useGardenData`](client/src/hooks/useGardenData.ts)) and no view component
+changed at all.
 
 Per-item CRUD would buy nothing here and cost plenty: ids threaded through every
 call site, optimistic update and rollback in the UI, and a merge strategy for
@@ -316,7 +318,7 @@ HTTP and SQLite rather than mocks of them. Coverage:
 | ----- | --------------------------------------------------------- | ------------- |
 | 1     | workspaces, server, API, tests                            | **done**      |
 | 2     | auth and sessions                                         | **cancelled** |
-| 3     | client reads and writes the API instead of `localStorage` | next          |
+| 3     | client reads and writes the API instead of `localStorage` | **done**      |
 | 4     | packaging as a Home Assistant add-on                      | later         |
 
 **There is no authentication and there will not be.** The app is deployed as a
@@ -435,24 +437,41 @@ Class strings are written out in full. Tailwind scans source text literally, so
 a constructed name like `` `bg-${hue}-100` `` never reaches the stylesheet and
 the colour would vanish from a production build.
 
-## Storage keys
+## Storage keys and the one-time migration
 
-`App` still owns all persisted state and writes it under these namespaced keys.
-Phase 3 replaces this layer with the API; the keys are what
-`POST /api/import` exists to ingest.
+The API is the only place the app persists anything. These keys are what the
+pre-server builds wrote, and what `POST /api/import` exists to ingest:
 
-| Key            | Contents          |
-| -------------- | ----------------- |
-| `hpt.seeds`    | `SeedPacket[]`    |
-| `hpt.beds`     | `GardenBed[]`     |
-| `hpt.harvests` | `HarvestLog[]`    |
+| Key                 | Contents                            |
+| ------------------- | ----------------------------------- |
+| `hpt.seeds`         | `SeedPacket[]`                      |
+| `hpt.beds`          | `GardenBed[]`                       |
+| `hpt.harvests`      | `HarvestLog[]`                      |
+| `hpt.serverImport`  | when the copy across was confirmed  |
 
-Reads and writes go through
-[`useLocalStorage`](client/src/hooks/useLocalStorage.ts), which parses lazily,
-falls back to the supplied initial value on missing or corrupt data, and
-swallows quota errors so a full disk never crashes the app. The starter dataset
-used as that fallback lives in
-[`client/src/lib/seedData.ts`](client/src/lib/seedData.ts).
+[`client/src/lib/localSnapshot.ts`](client/src/lib/localSnapshot.ts) reads the
+first three by key, so it keeps working now that `useLocalStorage` is gone. On
+the first run against an empty garden the app offers to copy what it finds to
+the server, reporting exactly what it found ("2 seed packets, 1 bed and 1
+harvest entry"). Two rules hold throughout:
+
+1. **Nothing is deleted from the browser** — before or after a successful
+   import. It costs a few kilobytes and it is the only fallback if the server is
+   lost before its first backup.
+2. **Nothing is copied without being asked**, and `hpt.serverImport` is written
+   only once the server confirms, so a failed import leaves the offer standing.
+
+`POST /api/import` only lands on a wholly empty garden, and the offer is only
+made while the garden reads as empty, so an import never destroys anything. If
+another device writes in the moment between, the server answers
+`409 import_not_empty` with every collection's current state, which the client
+folds the browser copy into with ordinary versioned `PUT`s. Merging is by id, so
+a second device offering the same `localStorage` is a no-op rather than a
+duplicate. Nothing is ever wiped, and there is no "replace everything" button.
+
+With no browser copy to move, the same card offers the sample garden in
+[`client/src/lib/seedData.ts`](client/src/lib/seedData.ts) instead. Both are
+opt-in: a tracker that invents rows on first launch is one you cannot trust.
 
 `activeView` is deliberately **not** persisted — the app always opens on the
 Bed Planner.
@@ -460,15 +479,50 @@ Bed Planner.
 ## Architecture
 
 `App` holds every piece of state at the top level and passes it down as props;
-the views are presentational and mutate through the setters they receive.
+the views are presentational and mutate through the setters they receive. The
+state itself comes from [`useGardenData`](client/src/hooks/useGardenData.ts),
+which keeps the `(data, setData)` contract the views already had.
 
 ```
 App
-├── Sidebar            { activeView, onChange }
+├── Sidebar            { activeView, onChange, status, onRetry }
+├── SyncBanner         { status, onRetry }
+├── ConflictChooser    { conflicts, onResolve, onResolveAll }
+├── FirstRunCard       { local, phase, onImport, onDismiss }
 ├── BedPlannerView     { beds, setBeds, seeds }
 ├── SeedVaultView      { seeds, setSeeds }
 └── HarvestLogView     { harvests, setHarvests, seeds }
 ```
+
+### Talking to the API
+
+Three modules, in layers:
+
+- [`client/src/lib/api.ts`](client/src/lib/api.ts) — resolves URLs against the
+  document base. Use it for every request rather than writing a path by hand;
+  an absolute `/api/...` breaks under ingress.
+- [`client/src/lib/apiClient.ts`](client/src/lib/apiClient.ts) — the only module
+  that speaks HTTP. Classifies failures (`network`, `stale`, `rejected`,
+  `server`, `malformed`) rather than stringifying them, and carries each
+  collection's opaque version.
+- [`client/src/hooks/useGardenData.ts`](client/src/hooks/useGardenData.ts) —
+  loading, optimistic writes, retries and merges.
+
+Every edit lands in local state immediately and is written behind the user's
+back, so the UI never waits for a round trip. Writes for one collection are
+serialised and rapid edits collapse into the next request. A failed save keeps
+the edit on screen and queued; it retries on the next edit, on reconnect, or
+when the user asks.
+
+Because `PUT` replaces a whole collection, every write declares the version it
+read (`If-Match`) and the server answers `409` rather than letting a stale tab
+erase what another device saved. That is routine, not an error: the response
+carries the current state, so the client runs an item-level three-way merge
+([`client/src/lib/merge.ts`](client/src/lib/merge.ts)) and retries in one round
+trip. Only genuinely divergent pairs — the same record changed differently in
+both places, or changed here and deleted there — reach the user, and then per
+item rather than all-or-nothing, worded as "changed on another device" rather
+than in the language of version control.
 
 Shared building blocks:
 
@@ -478,8 +532,6 @@ Shared building blocks:
   tiles.
 - `client/src/lib/id.ts` — `createId(prefix?)`, the single source of ids for new
   records. Use it instead of array indices for React keys.
-- `client/src/lib/api.ts` — resolves API URLs against the document base. Use it
-  for every request rather than writing a path by hand.
 
 ### Project layout
 
@@ -494,9 +546,12 @@ client/
     ├── main.tsx                  React entry point
     ├── index.css                 Tailwind entry + base layer
     ├── types.ts                  re-exports @hpt/shared + view prop contracts
-    ├── hooks/useLocalStorage.ts  typed localStorage-backed state
+    ├── hooks/useGardenData.ts    API-backed state, optimistic saves, merges
     ├── lib/
     │   ├── api.ts                base-path-aware API URLs
+    │   ├── apiClient.ts          typed fetch layer, versions and failures
+    │   ├── merge.ts              item-level three-way merge
+    │   ├── localSnapshot.ts      the pre-server browser copy, read-only
     │   ├── id.ts                 createId helper
     │   ├── seedData.ts           DEFAULT_SEEDS / DEFAULT_BEDS / DEFAULT_HARVESTS
     │   ├── categoryTheme.ts      shared crop-family colour palette
@@ -504,7 +559,12 @@ client/
     │   ├── rotation.ts           layout edits + crop-rotation conflicts
     │   └── harvest.ts            day grouping, totals, local date parsing
     └── components/
-        ├── Sidebar.tsx
+        ├── Sidebar.tsx           + SyncStatus.tsx (the live save footer)
+        ├── SyncBanner.tsx        offline and save-failure notices
+        ├── ConflictChooser.tsx   per-item "changed on another device"
+        ├── FirstRunCard.tsx      the one-time copy-across offer
+        ├── GardenLoading.tsx     quiet skeleton, only after 250ms
+        ├── GardenUnavailable.tsx the server could not be reached
         ├── BedPlannerView.tsx    + bed-planner/
         ├── SeedVaultView.tsx     + seed-vault/
         ├── HarvestLogView.tsx    + harvest-log/
