@@ -1,3 +1,10 @@
+# The add-on ships a committed build context, so `npm run build:addon` has to
+# produce the same bytes on every machine. Vite copies `index.html` through from
+# source while injecting its own script tags with LF, so a CRLF checkout yields
+# output that no amount of post-processing can reconcile with a LF one. Check
+# every text file out with LF so the build is reproducible across platforms.
+* text=auto eol=lf
+
 # Shell scripts run inside the add-on's Alpine container. A CRLF line ending
 # turns the shebang into `#!/bin/sh\r`, which the kernel resolves to a program
 # name that does not exist — the container then dies with a bare
