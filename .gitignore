@@ -17,6 +17,17 @@ dist-ssr
 .env.*
 !.env.example
 
+# Runtime data — never commit these. The database holds the password hash and
+# session records, and uploads holds harvest photos.
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+/data/
+/uploads/
+*.creds
+
 # Build caches
 .vite
 *.tsbuildinfo
