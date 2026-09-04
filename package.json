@@ -2,33 +2,36 @@
   "name": "home-plot-tracker",
   "private": true,
   "version": "0.0.0",
+  "description": "Self-hosted home vegetable garden tracker",
+  "license": "MIT",
   "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "typecheck": "tsc -b --noEmit",
-    "lint": "eslint .",
-    "preview": "vite preview"
+  "engines": {
+    "node": ">=22.6.0"
   },
-  "dependencies": {
-    "lucide-react": "^1.41.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+  "workspaces": [
+    "shared",
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "build:shared": "npm run build --workspace @hpt/shared",
+    "build": "npm run build:shared && npm run build --workspace @hpt/client && npm run build --workspace @hpt/server",
+    "typecheck": "npm run build:shared && npm run typecheck --workspaces --if-present",
+    "lint": "npm run build:shared && npm run lint --workspaces --if-present",
+    "test": "npm run build:shared && npm run test --workspace @hpt/server",
+    "dev": "npm run build:shared && concurrently --names server,client --prefix-colors green,cyan --kill-others-on-fail \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "npm run dev --workspace @hpt/server",
+    "dev:client": "npm run dev --workspace @hpt/client",
+    "start": "npm run start --workspace @hpt/server",
+    "preview": "npm run preview --workspace @hpt/client"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
-    "@types/react": "^18.3.31",
-    "@types/react-dom": "^18.3.7",
-    "@vitejs/plugin-react": "^4.4.1",
-    "autoprefixer": "^10.5.5",
+    "@types/node": "^22.15.3",
+    "concurrently": "^9.1.2",
     "eslint": "^9.25.0",
-    "eslint-plugin-react-hooks": "^5.2.0",
-    "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^16.0.0",
-    "postcss": "^8.5.28",
-    "tailwindcss": "^3.4.19",
     "typescript": "~5.8.3",
-    "typescript-eslint": "^8.30.1",
-    "vite": "^6.3.5"
+    "typescript-eslint": "^8.30.1"
   }
 }
