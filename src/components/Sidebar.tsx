@@ -17,7 +17,7 @@ const NAV_ITEMS: NavItem[] = [
 
 export function Sidebar({ activeView, onChange }: SidebarProps) {
   return (
-    <aside className="sticky top-0 flex h-screen w-20 shrink-0 flex-col border-r border-emerald-100/80 bg-white/80 backdrop-blur-sm md:w-72">
+    <aside className="sticky top-0 flex h-screen w-20 shrink-0 flex-col border-r border-emerald-100/80 bg-white/90 backdrop-blur-md md:w-72">
       <div className="flex items-center gap-3 px-4 py-6 md:px-6">
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-sm shadow-emerald-600/30">
           <Leaf className="h-6 w-6" aria-hidden="true" />
