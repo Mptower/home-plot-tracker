@@ -8,18 +8,27 @@
   }
 
   /*
-   * Pastel green wash with a tiled leaf sprig over it. The pattern is an inline
-   * SVG so it costs no extra request, and both layers are fixed so the leaves
-   * stay put while the page scrolls.
+   * Pastel wash under a hand-built botanical print: banana leaves, palm fronds,
+   * split-leaf monstera and eucalyptus sprigs. The tile in public/botanical.svg
+   * is seamless in both axes, and both layers are fixed so the foliage stays
+   * put while the page scrolls.
    */
   body {
     @apply font-sans text-stone-900 antialiased;
-    background-color: #eef9f1;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='%2334d399' fill-opacity='0.18' stroke='%23059669' stroke-opacity='0.16' stroke-width='1' stroke-linecap='round'%3E%3Cg transform='translate(26 24) rotate(-18)'%3E%3Cpath d='M0-11C-6.5-5 -6.5 5 0 11C6.5 5 6.5-5 0-11Z'/%3E%3Cpath d='M0-9V9' fill='none'/%3E%3C/g%3E%3Cg transform='translate(98 46) rotate(38) scale(0.85)'%3E%3Cpath d='M0-11C-6.5-5 -6.5 5 0 11C6.5 5 6.5-5 0-11Z'/%3E%3Cpath d='M0-9V9' fill='none'/%3E%3C/g%3E%3Cg transform='translate(58 92) rotate(158) scale(0.92)'%3E%3Cpath d='M0-11C-6.5-5 -6.5 5 0 11C6.5 5 6.5-5 0-11Z'/%3E%3Cpath d='M0-9V9' fill='none'/%3E%3C/g%3E%3Cg transform='translate(120 112) rotate(-58) scale(0.78)'%3E%3Cpath d='M0-11C-6.5-5 -6.5 5 0 11C6.5 5 6.5-5 0-11Z'/%3E%3Cpath d='M0-9V9' fill='none'/%3E%3C/g%3E%3Cg transform='translate(14 104) rotate(72) scale(0.8)'%3E%3Cpath d='M0-11C-6.5-5 -6.5 5 0 11C6.5 5 6.5-5 0-11Z'/%3E%3Cpath d='M0-9V9' fill='none'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E"),
-      linear-gradient(160deg, #f2fbf5 0%, #e6f6ec 45%, #dcf1e4 100%);
+    background-color: #cbe5d6;
+    background-image: url("/botanical.svg"),
+      linear-gradient(160deg, #d9eee3 0%, #cbe5d6 48%, #bfdecd 100%);
     background-repeat: repeat, no-repeat;
-    background-size: 140px 140px, cover;
+    background-size: 700px 700px, cover;
     background-attachment: fixed, fixed;
     background-position: center top, center top;
   }
+
+  @media (max-width: 640px) {
+    body {
+      background-size: 460px 460px, cover;
+    }
+  }
 }
+
+

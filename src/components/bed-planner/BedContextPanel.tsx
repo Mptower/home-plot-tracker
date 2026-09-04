@@ -24,7 +24,7 @@ export function BedContextPanel({
 
   return (
     <aside className="space-y-4" aria-label={`Details for ${bed.name}`}>
-      <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+      <section className="rounded-2xl border border-panel-edge bg-panel p-5 shadow-sm">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-stone-900">
           <Ruler className="h-4 w-4 text-emerald-600" aria-hidden="true" />
           Bed details
@@ -54,7 +54,7 @@ export function BedContextPanel({
         </dl>
 
         <div
-          className="mt-4 h-2 w-full overflow-hidden rounded-full bg-stone-100"
+          className="mt-4 h-2 w-full overflow-hidden rounded-full bg-panel-sunken"
           role="progressbar"
           aria-valuenow={filledPercent}
           aria-valuemin={0}
@@ -66,7 +66,7 @@ export function BedContextPanel({
         <p className="mt-2 text-xs text-stone-500">{filledPercent}% of this bed is planted.</p>
       </section>
 
-      <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+      <section className="rounded-2xl border border-panel-edge bg-panel p-5 shadow-sm">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-stone-900">
           <RefreshCw className="h-4 w-4 text-amber-600" aria-hidden="true" />
           Last year here
@@ -87,7 +87,7 @@ export function BedContextPanel({
         )}
       </section>
 
-      <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+      <section className="rounded-2xl border border-panel-edge bg-panel p-5 shadow-sm">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-stone-900">
           <Leaf className="h-4 w-4 text-emerald-600" aria-hidden="true" />
           Planted right now
@@ -121,7 +121,7 @@ export function BedContextPanel({
                         {isConflict ? ' · same family as last year' : ''}
                       </span>
                     </span>
-                    <span className="shrink-0 rounded-full bg-stone-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-stone-700">
+                    <span className="shrink-0 rounded-full bg-panel-sunken px-2 py-0.5 text-xs font-semibold tabular-nums text-stone-700">
                       {tally.count}
                     </span>
                   </li>
@@ -129,7 +129,7 @@ export function BedContextPanel({
               })}
             </ul>
 
-            <div className="mt-4 border-t border-stone-200 pt-3">
+            <div className="mt-4 border-t border-panel-edge pt-3">
               <h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500">
                 Legend
               </h4>

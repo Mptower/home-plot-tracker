@@ -56,13 +56,13 @@ export function HarvestFeed({
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="Search variety"
             disabled={!hasEntries}
-            className="w-full rounded-xl border border-stone-300 bg-white py-2 pl-9 pr-3 text-sm text-stone-900 shadow-sm transition-colors placeholder:text-stone-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:cursor-not-allowed disabled:bg-stone-100"
+            className="w-full rounded-xl border border-panel-edge bg-panel py-2 pl-9 pr-3 text-sm text-stone-900 shadow-sm transition-colors placeholder:text-stone-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:cursor-not-allowed disabled:bg-panel-sunken"
           />
         </div>
       </div>
 
       {days.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-6 py-12 text-center">
+        <div className="rounded-2xl border border-dashed border-panel-edge bg-panel px-6 py-12 text-center">
           <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
             {hasEntries ? (
               <Search className="h-6 w-6" aria-hidden="true" />
@@ -82,7 +82,7 @@ export function HarvestFeed({
             <button
               type="button"
               onClick={() => onQueryChange('')}
-              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-emerald-600/30 transition-colors hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-emerald-600/30 transition-colors hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
             >
               Clear search
             </button>
@@ -93,9 +93,9 @@ export function HarvestFeed({
           {days.map((day) => (
             <article
               key={day.date}
-              className="rounded-2xl border border-stone-200 bg-white shadow-sm"
+              className="rounded-2xl border border-panel-edge bg-panel shadow-sm"
             >
-              <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-t-2xl border-b border-stone-200 bg-white/95 px-4 py-3 backdrop-blur">
+              <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-t-2xl border-b border-panel-edge bg-panel/95 px-4 py-3 backdrop-blur">
                 <h4 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-stone-900">
                   <Calendar className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
                   <span className="truncate">{day.label}</span>

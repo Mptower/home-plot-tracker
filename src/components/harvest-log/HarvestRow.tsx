@@ -16,7 +16,7 @@ export function HarvestRow({ entry, onDelete }: HarvestRowProps) {
   const [isConfirming, setIsConfirming] = useState(false);
 
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 transition-colors hover:bg-stone-50">
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 transition-colors hover:bg-panel-sunken">
       <p className="min-w-0 flex-1 truncate text-sm font-semibold text-stone-900">
         {entry.variety}
       </p>
@@ -33,7 +33,7 @@ export function HarvestRow({ entry, onDelete }: HarvestRowProps) {
           </span>
         )}
         {entry.weightLbs <= 0 && entry.count <= 0 && (
-          <span className={`${CHIP_CLASSES} bg-stone-100 text-stone-500`}>Not weighed</span>
+          <span className={`${CHIP_CLASSES} bg-panel-sunken text-stone-500`}>Not weighed</span>
         )}
       </div>
 
@@ -42,14 +42,14 @@ export function HarvestRow({ entry, onDelete }: HarvestRowProps) {
           <button
             type="button"
             onClick={() => onDelete(entry.id)}
-            className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+            className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
           >
             Delete
           </button>
           <button
             type="button"
             onClick={() => setIsConfirming(false)}
-            className="rounded-lg border border-stone-300 px-2.5 py-1 text-xs font-semibold text-stone-600 transition-colors hover:bg-stone-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+            className="rounded-lg border border-panel-edge px-2.5 py-1 text-xs font-semibold text-stone-600 transition-colors hover:bg-panel-sunken focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
           >
             Keep
           </button>
@@ -59,7 +59,7 @@ export function HarvestRow({ entry, onDelete }: HarvestRowProps) {
           type="button"
           onClick={() => setIsConfirming(true)}
           aria-label={`Delete the ${entry.variety} harvest logged on ${entry.date}`}
-          className="shrink-0 rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-red-50 hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+          className="shrink-0 rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-red-50 hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
         >
           <Trash2 className="h-4 w-4" aria-hidden="true" />
         </button>

@@ -17,7 +17,7 @@ export function SeedCard({ packet, onDelete }: SeedCardProps) {
 
   return (
     <article
-      className={`flex h-full flex-col rounded-2xl border bg-white p-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md ${theme.card}`}
+      className={`flex h-full flex-col rounded-2xl border bg-panel p-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md ${theme.card}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -46,7 +46,7 @@ export function SeedCard({ packet, onDelete }: SeedCardProps) {
               type="button"
               onClick={() => setIsConfirmingDelete(false)}
               aria-label={`Keep ${packet.variety}`}
-              className="rounded-xl p-1.5 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+              className="rounded-xl p-1.5 text-stone-400 transition-colors hover:bg-panel-sunken hover:text-stone-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -87,7 +87,7 @@ export function SeedCard({ packet, onDelete }: SeedCardProps) {
             {estimate.ratePercent}%
           </span>
         </div>
-        <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-stone-100" aria-hidden="true">
+        <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-panel-sunken" aria-hidden="true">
           <div
             className={`h-full rounded-full transition-[width] duration-300 ${theme.bar}`}
             style={{ width: `${estimate.ratePercent}%` }}

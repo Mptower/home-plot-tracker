@@ -30,12 +30,12 @@ export function BedCell({
 
   const stateClasses = variety
     ? style.cell
-    : 'border-dashed border-stone-300 bg-stone-50 text-stone-400 hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-600';
+    : 'border-dashed border-panel-edge bg-panel-sunken text-stone-400 hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-600';
 
   const ringClasses = isActive
-    ? 'ring-2 ring-emerald-600 ring-offset-2 ring-offset-white'
+    ? 'ring-2 ring-emerald-600 ring-offset-2 ring-offset-panel'
     : isConflicting
-      ? 'ring-2 ring-amber-400 ring-offset-1 ring-offset-white'
+      ? 'ring-2 ring-amber-400 ring-offset-1 ring-offset-panel'
       : '';
 
   return (
@@ -46,7 +46,7 @@ export function BedCell({
       aria-label={describeCell(row, column, variety)}
       aria-pressed={isActive}
       title={variety ?? 'Empty square'}
-      className={`flex aspect-square w-full flex-col items-center justify-center gap-1 overflow-hidden rounded-xl border p-1 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${stateClasses} ${ringClasses}`}
+      className={`flex aspect-square w-full flex-col items-center justify-center gap-1 overflow-hidden rounded-xl border p-1 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel ${stateClasses} ${ringClasses}`}
     >
       {variety ? (
         <span className="line-clamp-3 text-[10px] font-semibold leading-tight sm:text-xs">

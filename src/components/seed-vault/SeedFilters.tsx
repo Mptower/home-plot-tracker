@@ -26,7 +26,7 @@ export function SeedFilters({
   return (
     <section
       aria-label="Filter seed packets"
-      className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm sm:p-5"
+      className="rounded-2xl border border-panel-edge bg-panel p-4 shadow-sm sm:p-5"
     >
       <label htmlFor={searchId} className="sr-only">
         Search packets by variety, brand or notes
@@ -42,14 +42,14 @@ export function SeedFilters({
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder="Search variety, brand or notes…"
-          className="w-full rounded-xl border border-stone-200 bg-stone-50 py-2.5 pl-9 pr-10 text-sm text-stone-900 placeholder:text-stone-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+          className="w-full rounded-xl border border-panel-edge bg-panel-sunken py-2.5 pl-9 pr-10 text-sm text-stone-900 placeholder:text-stone-400 focus:border-emerald-500 focus:bg-panel focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
         />
         {query !== '' && (
           <button
             type="button"
             onClick={() => onQueryChange('')}
             aria-label="Clear search"
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-panel-sunken hover:text-stone-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -69,7 +69,7 @@ export function SeedFilters({
               className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
                 isActive
                   ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
-                  : 'bg-stone-100 text-stone-600 hover:bg-stone-200 hover:text-stone-900'
+                  : 'bg-panel-sunken text-stone-600 hover:bg-panel-edge hover:text-stone-900'
               }`}
             >
               {chip}

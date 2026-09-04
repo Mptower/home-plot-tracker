@@ -75,7 +75,11 @@ const CATEGORY_STYLES: Record<string, CategoryStyle> = {
   },
 };
 
-/** Used for plantings whose variety is no longer in the vault. */
+/**
+ * Used for plantings whose variety is no longer in the vault. These stay
+ * neutral stone rather than joining the app's pastel green surfaces, so an
+ * uncatalogued square reads as "no crop family recorded" at a glance.
+ */
 export const UNKNOWN_CATEGORY_STYLE: CategoryStyle = {
   cell: 'border-stone-300 bg-stone-100 text-stone-700 hover:bg-stone-200',
   swatch: 'bg-stone-400',

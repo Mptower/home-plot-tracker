@@ -24,7 +24,7 @@ export function HarvestSummary({ totals, isFiltered }: HarvestSummaryProps) {
   ];
 
   return (
-    <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
+    <section className="rounded-2xl border border-panel-edge bg-panel p-5 shadow-sm sm:p-6">
       <div className="flex items-center gap-3">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
           <TrendingUp className="h-5 w-5" aria-hidden="true" />
@@ -43,7 +43,7 @@ export function HarvestSummary({ totals, isFiltered }: HarvestSummaryProps) {
 
       <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {stats.map((stat) => (
-          <div key={stat.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2.5">
+          <div key={stat.id} className="rounded-2xl border border-panel-edge bg-panel-sunken px-3 py-2.5">
             <dt className="text-xs font-semibold uppercase tracking-wide text-stone-500">
               {stat.label}
             </dt>
@@ -73,7 +73,7 @@ export function HarvestSummary({ totals, isFiltered }: HarvestSummaryProps) {
                       {formatWeight(total.totalWeightLbs)}
                     </span>
                   </div>
-                  <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-stone-100">
+                  <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-panel-sunken">
                     <div
                       className="h-full rounded-full bg-emerald-500"
                       style={{ width: `${width}%` }}

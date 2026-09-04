@@ -19,7 +19,7 @@ interface FieldErrors {
 }
 
 const FIELD_CLASSES =
-  'w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 shadow-sm transition-colors placeholder:text-stone-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40';
+  'w-full rounded-xl border border-panel-edge bg-panel px-3 py-2 text-sm text-stone-900 shadow-sm transition-colors placeholder:text-stone-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40';
 
 const INVALID_FIELD_CLASSES = 'border-red-400 focus:border-red-500 focus:ring-red-500/40';
 
@@ -129,7 +129,7 @@ export function HarvestForm({ varieties, onSubmit }: HarvestFormProps) {
     <form
       noValidate
       onSubmit={handleSubmit}
-      className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6"
+      className="rounded-2xl border border-panel-edge bg-panel p-5 shadow-sm sm:p-6"
     >
       <div className="flex items-center gap-3">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
@@ -259,7 +259,7 @@ export function HarvestForm({ varieties, onSubmit }: HarvestFormProps) {
 
       <button
         type="submit"
-        className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-emerald-600/30 transition-colors hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+        className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-emerald-600/30 transition-colors hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
       >
         <Plus className="h-4 w-4" aria-hidden="true" />
         Add harvest
