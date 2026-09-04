@@ -23,7 +23,9 @@
  *   npm run build:addon
  *
  * `--check` verifies the committed tree matches the current build and touches
- * nothing. That is what CI runs.
+ * nothing. That is what CI runs. It compares against whatever is in `dist/`
+ * right now, so it only means something after `npm run build` — on a stale
+ * `dist/` it will happily pass while the committed tree is wrong.
  */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -93,7 +95,62 @@ function copyTree(from, to, { skipSourceMaps = false } = {}) {
 
     if (skipSourceMaps && entry.name.endsWith('.map')) continue;
 
-    fs.copyFileSync(source, target);
+    copyFile(source, target);
+  }
+}
+
+/**
+ * The generated tree is committed, so it has to come out the same bytes on every
+ * machine. Two things leak the checkout's line endings into it: TypeScript
+ * copies the newlines inside a template literal through verbatim, which puts
+ * CRLF in the migration SQL, and Vite copies `index.html` and `public/` through
+ * as they are. `.gitattributes` checks every text file out as LF so this never
+ * arises, but normalising here too means the tree does not silently depend on
+ * that, or on anyone's `core.autocrlf`, or on being built from a git checkout at
+ * all. Only known text extensions are rewritten, so the PNGs stay untouched.
+ */
+const TEXT_EXTENSIONS = new Set(['.css', '.html', '.js', '.json', '.map', '.svg', '.txt', '.webmanifest']);
+
+function copyFile(source, target) {
+  const contents = fs.readFileSync(source);
+  const isText = TEXT_EXTENSIONS.has(path.extname(source).toLowerCase());
+
+  if (!isText || !contents.includes(0x0d)) {
+    fs.writeFileSync(target, contents);
+    return;
+  }
+
+  fs.writeFileSync(target, Buffer.from(contents.toString('utf8').replaceAll('\r\n', '\n'), 'utf8'));
+}
+
+/**
+ * Normalising CRLF is not quite a guarantee on its own, so verify the result.
+ *
+ * Vite rewrites the script tags in `index.html` and injects the replacements
+ * with LF regardless of the surrounding file, which on a CRLF checkout leaves a
+ * lone carriage return mid-line — `</div>\r` followed by its own `\r\n`. Turning
+ * that into a bare newline as well would produce a blank line an LF checkout
+ * never had, so the copy above deliberately only touches CRLF pairs, and this
+ * catches anything left over rather than shipping a tree that cannot match CI.
+ */
+function assertNoStrayCarriageReturns(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const target = path.join(dir, entry.name);
+
+    if (entry.isDirectory()) {
+      assertNoStrayCarriageReturns(target);
+      continue;
+    }
+
+    if (!TEXT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
+
+    if (fs.readFileSync(target).includes(0x0d)) {
+      fail(
+        `${entry.name} still contains a carriage return after staging, so this tree would not match one ` +
+          'built on Linux — check out the repository with LF line endings (.gitattributes sets eol=lf), ' +
+          `then re-run; ${relativeStage} has been left incomplete`,
+      );
+    }
   }
 }
 
@@ -152,6 +209,7 @@ function stageInto(target, version, reusableLock) {
 
   copyTree(SERVER_BUILD, path.join(target, 'server'), { skipSourceMaps: true });
   copyTree(CLIENT_BUILD, path.join(target, 'client'));
+  assertNoStrayCarriageReturns(target);
   fs.writeFileSync(path.join(target, 'package.json'), manifest(version));
 
   // Reuse the committed lockfile whenever it still resolves to the same

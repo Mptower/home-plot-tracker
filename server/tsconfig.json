@@ -21,6 +21,12 @@
     "rootDir": ".",
     "sourceMap": true,
     "declaration": false,
+    /* The compiled server is vendored into the add-on build context, so emit has to
+       be identical everywhere; tsc defaults this to the host's line ending. It only
+       covers the separators tsc writes itself — newlines inside a template literal
+       come through from the source verbatim, which is why the build context is
+       checked out as LF and scripts/build-addon.mjs normalises on top. */
+    "newLine": "lf",
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
 
     "strict": true,

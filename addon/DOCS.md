@@ -15,7 +15,9 @@ and it is there.
 3. Find **The Home Plot Tracker** in the store — it appears in its own section
    at the bottom of the page — and select **Install**. The first install builds
    the image on your machine, so give it a couple of minutes.
-4. Turn on **Show in sidebar**, then **Start**.
+4. Turn on **Show in sidebar**, then **Start**. The sidebar entry is a per-install
+   setting rather than something the add-on can switch on for you, so this step is
+   easy to miss — without it the add-on runs but **Garden** never appears.
 
 ## Configuration
 
