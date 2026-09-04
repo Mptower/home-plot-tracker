@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { MIGRATIONS } from '../src/db/migrations.ts';
 import { bed, harvest, seed, startServer } from './helpers.ts';
 
 test('GET /api/health reports the schema version', async (t) => {
@@ -11,7 +12,7 @@ test('GET /api/health reports the schema version', async (t) => {
 
   const body = (await response.json()) as Record<string, unknown>;
   assert.equal(body.status, 'ok');
-  assert.equal(body.schemaVersion, 1);
+  assert.equal(body.schemaVersion, MIGRATIONS.at(-1)?.version);
   assert.equal(typeof body.uptimeSeconds, 'number');
   assert.equal(typeof body.timestamp, 'string');
 });
@@ -154,8 +155,78 @@ test('unknown API routes answer with JSON, not HTML', async (t) => {
   assert.equal(response.status, 404);
   assert.match(response.headers.get('content-type') ?? '', /application\/json/);
 
-  const body = (await response.json()) as { error: string };
-  assert.match(body.error, /No API route for GET/);
+  const body = (await response.json()) as { error: string; message: string };
+  assert.equal(body.error, 'not_found');
+  assert.match(body.message, /No API route for GET/);
+});
+
+test('every failure uses the same shape: a code in `error`, prose in `message`', async (t) => {
+  const server = await startServer();
+  t.after(() => server.close());
+
+  await server.putJson('/api/beds', [bed()]);
+
+  const failures: { label: string; expected: string; response: Response }[] = [
+    {
+      label: 'unknown route',
+      expected: 'not_found',
+      response: await server.get('/api/tomatoes'),
+    },
+    {
+      label: 'wrong content type',
+      expected: 'unsupported_media_type',
+      response: await fetch(server.url('/api/seeds'), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'text/plain' },
+        body: '[]',
+      }),
+    },
+    {
+      label: 'broken JSON',
+      expected: 'malformed_json',
+      response: await fetch(server.url('/api/seeds'), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: '[{',
+      }),
+    },
+    {
+      label: 'invalid payload',
+      expected: 'validation_failed',
+      response: await server.putJson('/api/seeds', [{ nope: true }]),
+    },
+    {
+      label: 'no precondition',
+      expected: 'precondition_required',
+      response: await server.putRaw('/api/seeds', []),
+    },
+    {
+      label: 'stale precondition',
+      expected: 'version_mismatch',
+      response: await server.putRaw('/api/beds', [], { 'If-Match': '"0"' }),
+    },
+    {
+      label: 'import into a non-empty garden',
+      expected: 'import_not_empty',
+      response: await server.postJson('/api/import', { seeds: [], beds: [], harvests: [] }),
+    },
+  ];
+
+  for (const failure of failures) {
+    const body = (await failure.response.json()) as Record<string, unknown>;
+
+    assert.equal(body.error, failure.expected, `${failure.label} should report its own code`);
+    assert.equal(typeof body.message, 'string', `${failure.label} needs prose for a human`);
+    assert.ok((body.message as string).length > 0, `${failure.label} message must not be empty`);
+
+    // The whole reason for splitting the two: a caller can branch on `error`
+    // without its logic breaking the next time the wording is improved.
+    assert.notEqual(
+      body.error,
+      body.message,
+      `${failure.label} must not put the sentence in the code field`,
+    );
+  }
 });
 
 test('per-item CRUD is deliberately absent', async (t) => {
@@ -179,8 +250,9 @@ test('a write without a JSON content type is refused', async (t) => {
   });
 
   assert.equal(response.status, 415);
-  const body = (await response.json()) as { error: string };
-  assert.match(body.error, /application\/json/);
+  const body = (await response.json()) as { error: string; message: string };
+  assert.equal(body.error, 'unsupported_media_type');
+  assert.match(body.message, /application\/json/);
 });
 
 test('a malformed JSON body is a 400, not a crash', async (t) => {
@@ -194,6 +266,8 @@ test('a malformed JSON body is a 400, not a crash', async (t) => {
   });
 
   assert.equal(response.status, 400);
-  const body = (await response.json()) as { error: string };
-  assert.match(body.error, /not valid JSON/);
+  const body = (await response.json()) as { error: string; message: string };
+  assert.equal(body.error, 'malformed_json');
+  assert.match(body.message, /not valid JSON/);
 });
+

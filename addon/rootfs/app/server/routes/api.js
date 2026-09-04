@@ -16,47 +16,99 @@
 import express from 'express';
 import { withTransaction } from "../db/open.js";
 import { listBeds, listHarvests, listSeeds, replaceBeds, replaceHarvests, replaceSeeds, } from "../db/collections.js";
+import { bumpVersion, readAllVersions, readVersion, replaceIfCurrent } from "../db/versions.js";
 import { appliedVersions } from "../db/migrate.js";
-import { requireJsonBody, sendError, sendValidationError } from "../http.js";
+import { parseIfMatch, requireJsonBody, sendError, sendImportConflict, sendValidationError, sendVersionConflict, versionToken, } from "../http.js";
 import { validateBeds, validateHarvests, validateSeeds, validateSnapshot } from "../validation.js";
 /** Bodies are three small arrays; 4 MB is roomy for a decade of harvests. */
 const BODY_LIMIT = '4mb';
+/** Counters -> entity tags, so every version leaves the server in the same form. */
+function tokenise(versions) {
+    return {
+        seeds: versionToken(versions.seeds),
+        beds: versionToken(versions.beds),
+        harvests: versionToken(versions.harvests),
+    };
+}
 const SEEDS = {
+    name: 'seeds',
     path: '/seeds',
     read: listSeeds,
     replace: replaceSeeds,
     validate: validateSeeds,
 };
 const BEDS = {
+    name: 'beds',
     path: '/beds',
     read: listBeds,
     replace: replaceBeds,
     validate: validateBeds,
 };
 const HARVESTS = {
+    name: 'harvests',
     path: '/harvests',
     read: listHarvests,
     replace: replaceHarvests,
     validate: validateHarvests,
 };
 function mountCollection(router, db, endpoint) {
+    /** Version and contents read together, so the ETag always describes the body beside it. */
+    const readCurrent = () => withTransaction(db, () => ({
+        version: readVersion(db, endpoint.name),
+        items: endpoint.read(db),
+    }));
     router.get(endpoint.path, (_req, res) => {
-        res.json(endpoint.read(db));
+        const current = readCurrent();
+        // Set before `json`, because Express only auto-generates an ETag when one is
+        // absent — so ours wins. It also turns on conditional-GET handling: a phone
+        // polling with `If-None-Match` gets a 304 and no body.
+        res.set('ETag', versionToken(current.version));
+        res.json(current.items);
     });
     router.put(endpoint.path, requireJsonBody, (req, res) => {
+        // Validation before the precondition, per RFC 9110 §13.2.1: a request that
+        // would fail anyway should say so, rather than sending the client off to
+        // refetch and retry a payload that was never going to be accepted.
         const result = endpoint.validate(req.body);
         if (!result.ok) {
             sendValidationError(res, result.issues);
             return;
         }
-        // One transaction around delete-then-insert: a failure part-way through can
-        // never leave the collection half replaced.
-        withTransaction(db, () => {
-            endpoint.replace(db, result.value);
-        });
-        // Read back rather than echoing the request, so the response is proof of
-        // what was actually stored.
-        res.json(endpoint.read(db));
+        const ifMatch = parseIfMatch(req.get('if-match'));
+        if (ifMatch.kind !== 'version') {
+            // No usable precondition. Refused rather than applied — an unversioned
+            // write is exactly the stale-tab overwrite this whole mechanism exists to
+            // stop, and it is indistinguishable from one. The current state rides
+            // along so an honest client recovers in a single round trip.
+            const current = readCurrent();
+            sendVersionConflict(res, 428, endpoint.name, versionToken(current.version), current.items, {
+                message: ifMatch.kind === 'absent'
+                    ? `This write must declare the version it is editing from. Send If-Match with the ` +
+                        `ETag from your last GET of /api/${endpoint.name}. Nothing was saved.`
+                    : `If-Match was ${JSON.stringify(ifMatch.raw)}, which is not a version this server ` +
+                        `issued. Note that "*" is rejected too: a collection always exists, so it would ` +
+                        `match unconditionally and protect nothing. Nothing was saved.`,
+            });
+            return;
+        }
+        // Check and write in one transaction. Splitting them would leave a window in
+        // which two requests both read version 3, both judge themselves current and
+        // both write — the lost update, reintroduced with extra steps.
+        const write = replaceIfCurrent(db, endpoint.name, ifMatch.version, result.value, endpoint.replace, endpoint.read);
+        if (!write.ok) {
+            sendVersionConflict(res, 409, endpoint.name, versionToken(write.currentVersion), write.current, {
+                message: `The ${endpoint.name} collection changed since you loaded it, so saving would have ` +
+                    `discarded that change. Nothing was saved. Reconcile your edit against "current" ` +
+                    `and retry with the new version in If-Match.`,
+                expectedVersion: versionToken(ifMatch.version),
+            });
+            return;
+        }
+        // The new ETag, so a client can keep writing without a follow-up GET. The
+        // body is read back from the database rather than echoed from the request,
+        // so it is proof of what was actually stored.
+        res.set('ETag', versionToken(write.version));
+        res.json(write.items);
     });
 }
 export function createApiRouter(db) {
@@ -91,7 +143,14 @@ export function createApiRouter(db) {
      *
      * It **replaces**, it does not merge. Merging two divergent collections with no
      * per-record timestamps would mean guessing, and a wrong guess silently
-     * resurrects deleted rows. The response says which happened in as many words.
+     * resurrects deleted rows.
+     *
+     * No `If-Match` here, because first-run migration happens before the client has
+     * ever read a version — there is nothing it could send. Instead the guard is
+     * emptiness: import only runs into an empty garden. That keeps the one job it
+     * exists for working, while making it impossible to wipe a season of real
+     * records with a stale browser snapshot. Once there is data, the ordinary
+     * versioned `PUT` is the way in.
      */
     router.post('/import', requireJsonBody, (req, res) => {
         const result = validateSnapshot(req.body);
@@ -99,31 +158,54 @@ export function createApiRouter(db) {
             sendValidationError(res, result.issues);
             return;
         }
-        const previous = {
-            seeds: listSeeds(db).length,
-            beds: listBeds(db).length,
-            harvests: listHarvests(db).length,
-        };
-        // All three collections land together or not at all.
-        withTransaction(db, () => {
+        // Emptiness check and write share a transaction, so a write landing between
+        // the two cannot slip past the guard.
+        const outcome = withTransaction(db, () => {
+            const existing = {
+                seeds: listSeeds(db),
+                beds: listBeds(db),
+                harvests: listHarvests(db),
+            };
+            const nonEmpty = Object.keys(existing).filter((name) => existing[name].length > 0);
+            if (nonEmpty.length > 0) {
+                return { ok: false, nonEmpty, versions: readAllVersions(db) };
+            }
             replaceSeeds(db, result.value.seeds);
             replaceBeds(db, result.value.beds);
             replaceHarvests(db, result.value.harvests);
+            // Bump all three even though each was empty: a tab that read version 0
+            // before the import must not then be able to write over it.
+            return {
+                ok: true,
+                versions: {
+                    seeds: bumpVersion(db, 'seeds'),
+                    beds: bumpVersion(db, 'beds'),
+                    harvests: bumpVersion(db, 'harvests'),
+                },
+            };
         });
+        if (!outcome.ok) {
+            sendImportConflict(res, outcome.nonEmpty, tokenise(outcome.versions), {
+                seeds: listSeeds(db),
+                beds: listBeds(db),
+                harvests: listHarvests(db),
+            });
+            return;
+        }
         res.json({
             mode: 'replace',
-            message: 'Replaced all existing data with the imported snapshot. Nothing was merged; ' +
-                'any records that were on the server and not in this payload are gone.',
-            replaced: previous,
+            message: 'Imported the snapshot into an empty garden. Nothing was merged, and nothing was ' +
+                'overwritten: import only runs when the server holds no records. Use PUT from now on.',
             imported: {
                 seeds: result.value.seeds.length,
                 beds: result.value.beds.length,
                 harvests: result.value.harvests.length,
             },
+            versions: tokenise(outcome.versions),
         });
     });
     router.use((req, res) => {
-        sendError(res, 404, `No API route for ${req.method} ${req.originalUrl}`);
+        sendError(res, 404, 'not_found', `No API route for ${req.method} ${req.originalUrl}`);
     });
     return router;
 }

@@ -46,5 +46,35 @@ export const MIGRATIONS = [
       `);
         },
     },
+    {
+        version: 2,
+        name: 'collection_versions',
+        up(db) {
+            // Optimistic concurrency. A write replaces a whole collection, so a stale
+            // tab saving over a newer one would silently erase records — a phone in
+            // the garden and a laptop indoors is exactly the case this app has. Each
+            // collection gets a counter that every successful write bumps; a client
+            // must declare the version it read, and a mismatch is a 409 rather than a
+            // silent overwrite.
+            //
+            // A dedicated table rather than a column on each row: the unit of change
+            // is the collection, not the record. Storing it per row would mean picking
+            // a winner among them on read, which is the same thing said less clearly.
+            db.exec(`
+        CREATE TABLE IF NOT EXISTS collection_versions (
+          collection TEXT    PRIMARY KEY,
+          version    INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+            // Seeded rather than created lazily so a read never has to write, and so
+            // "collection I have never heard of" stays distinguishable from
+            // "collection nobody has written yet".
+            const seed = db.prepare('INSERT OR IGNORE INTO collection_versions (collection, version) VALUES (?, 0)');
+            for (const collection of ['seeds', 'beds', 'harvests']) {
+                seed.run(collection);
+            }
+        },
+    },
 ];
 //# sourceMappingURL=migrations.js.map

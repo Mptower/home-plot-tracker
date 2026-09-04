@@ -7,17 +7,18 @@ logging every harvest.
 
 The app began as a pure client-side SPA that kept everything in the browser's
 `localStorage`. That is per-browser-profile: a phone in the garden and a laptop
-indoors are two separate datastores that silently diverge. It is being moved to
-a small self-hosted server so there is one source of truth.
+indoors are two separate datastores that silently diverge. It now runs against a
+small self-hosted server, so there is one source of truth.
 
 It is deployed as a **Home Assistant add-on behind HA ingress**, which
 authenticates every request against the user's Home Assistant session. That is
 why the app has no login of its own, and why both halves are careful to work
 under an arbitrary URL prefix.
 
-This repo is mid-migration. **The server and its API exist and are complete
-(phase 1), and the Home Assistant add-on that ships them exists (phase 4); the
-client still reads and writes `localStorage` until phase 3 rewires it.** See
+**The server and its API are complete (phase 1), the client reads and writes
+them rather than `localStorage` (phase 3), and the Home Assistant add-on that
+ships them is here too (phase 4).** A browser that still holds the old data is
+offered a one-time copy across, and never has it deleted. See
 [Migration phases](#migration-phases).
 
 ## Repository layout
@@ -101,13 +102,17 @@ Three collections, each with exactly two operations:
 | Method | Path                    | Does                                    |
 | ------ | ----------------------- | --------------------------------------- |
 | `GET`  | `/api/health`           | liveness probe for systemd / monitoring |
-| `GET`  | `/api/seeds`            | the full `SeedPacket[]`                 |
-| `PUT`  | `/api/seeds`            | replaces it                             |
-| `GET`  | `/api/beds`             | the full `GardenBed[]`                  |
-| `PUT`  | `/api/beds`             | replaces it                             |
-| `GET`  | `/api/harvests`         | the full `HarvestLog[]`                 |
-| `PUT`  | `/api/harvests`         | replaces it                             |
-| `POST` | `/api/import`           | replaces all three at once              |
+| `GET`  | `/api/seeds`            | the full `SeedPacket[]`, plus an `ETag` |
+| `PUT`  | `/api/seeds`            | replaces it; requires `If-Match`        |
+| `GET`  | `/api/beds`             | the full `GardenBed[]`, plus an `ETag`  |
+| `PUT`  | `/api/beds`             | replaces it; requires `If-Match`        |
+| `GET`  | `/api/harvests`         | the full `HarvestLog[]`, plus an `ETag` |
+| `PUT`  | `/api/harvests`         | replaces it; requires `If-Match`        |
+| `POST` | `/api/import`           | first-run migration into an empty garden |
+
+Request and response bodies for the collections are bare JSON arrays. The
+version travels in headers, not in an envelope, so the body stays exactly the
+shape the views already pass around.
 
 ### Why collection-level, and not per-item CRUD
 
@@ -121,8 +126,9 @@ HarvestLogView     { harvests, setHarvests, seeds }
 ```
 
 `GET` is the read half of that pair and `PUT` is the write half, so phase 3
-replaces the `useLocalStorage` hook with a fetching one and no view component
-changes at all.
+replaced the `useLocalStorage` hook with a fetching one
+([`useGardenData`](client/src/hooks/useGardenData.ts)) and no view component
+changed at all.
 
 Per-item CRUD would buy nothing here and cost plenty: ids threaded through every
 call site, optimistic update and rollback in the UI, and a merge strategy for
@@ -138,6 +144,104 @@ back is what was actually stored.
 Array order is preserved: each row carries a `position` column and reads are
 `ORDER BY position`.
 
+### Concurrent edits
+
+Replacing a whole collection has one sharp edge, and it is the reason this app
+left `localStorage` in the first place. Two devices are in use — a phone in the
+garden and a laptop indoors:
+
+```
+09:00  laptop   GET /api/harvests   -> []
+14:00  phone    PUT /api/harvests   -> two afternoon harvests
+14:05  laptop   PUT /api/harvests   -> saves the empty list it loaded at 09:00
+```
+
+Without a check, that last write silently erases the afternoon. No error, no
+trace, and nothing to recover from. So each collection carries a version, and a
+write has to say which version it is editing.
+
+**Reading.** `GET` returns the version as an `ETag`:
+
+```
+GET /api/harvests
+200 OK
+ETag: "7"
+
+[ ... ]
+```
+
+The token is opaque — quotes included. Echo it back verbatim; don't parse it.
+
+**Writing.** `PUT` requires `If-Match`. On success you get the new version back,
+so a client can keep writing without a follow-up `GET`:
+
+```
+PUT /api/harvests
+If-Match: "7"
+
+200 OK
+ETag: "8"
+```
+
+**Losing.** If the stored version has moved on, the write is refused with `409`
+and nothing is saved. The response carries the current version *and* the current
+collection, so the client reconciles and retries in one round trip instead of
+two:
+
+```json
+{
+  "error": "version_mismatch",
+  "message": "The harvests collection changed since you loaded it, so saving would have discarded that change. Nothing was saved.",
+  "currentVersion": "\"8\"",
+  "current": [ "...the full current collection..." ],
+  "collection": "harvests",
+  "expectedVersion": "\"7\""
+}
+```
+
+`currentVersion` is byte-identical to the `ETag` header, so it can go straight
+back into `If-Match` on the retry.
+
+**Not asking.** A `PUT` with no `If-Match` is refused with `428 Precondition
+Required` and the same body shape. It is never applied. An unversioned write is
+indistinguishable from the stale-tab overwrite above, so treating it as
+"probably fine" would leave the hole open for exactly the client most likely to
+have the bug. `If-Match: *` is refused too: a collection always exists, so `*`
+would match unconditionally and protect nothing.
+
+Three details that matter:
+
+- **The check and the write share one transaction.** Reading the version in one
+  statement and writing in another would leave a window where two requests both
+  read version 7, both judge themselves current, and both write.
+- **Versions are per collection.** Editing seeds does not invalidate an
+  in-flight beds write.
+- **They live in SQLite** (`collection_versions`), so they survive a restart. An
+  in-memory counter would reset to 0 on every reboot and hand every stale tab a
+  precondition that matches.
+
+A failed write never advances the version — a version that moved without its
+data would be worse than none, because it would then reject the client's
+perfectly good retry.
+
+### Errors
+
+Every failure, from any endpoint, has the same shape: `error` is a stable
+machine-readable code and `message` is prose for a human. Branch on `error`;
+show `message`. Extra fields hang off the same object.
+
+| `error`                  | Status | When                                          |
+| ------------------------ | ------ | --------------------------------------------- |
+| `validation_failed`      | 400    | payload rejected; adds `issues`               |
+| `malformed_json`         | 400    | body was not parseable JSON                   |
+| `unsupported_media_type` | 415    | `Content-Type` was not `application/json`     |
+| `payload_too_large`      | 413    | body above the 4 MB limit                     |
+| `not_found`              | 404    | no such route                                 |
+| `precondition_required`  | 428    | `PUT` with no usable `If-Match`               |
+| `version_mismatch`       | 409    | `PUT` from a stale version                    |
+| `import_not_empty`       | 409    | `POST /api/import` into a garden with data    |
+| `internal_error`         | 500    | anything unhandled                            |
+
 ### Validation
 
 Every write is validated server-side, on the assumption that the client is
@@ -146,7 +250,8 @@ path:
 
 ```json
 {
-  "error": "The seeds payload was rejected.",
+  "error": "validation_failed",
+  "message": "The submitted data was rejected (2 problems). Nothing was saved.",
   "issues": [
     { "path": "body[0].purchaseYear", "message": "expected an integer, received string" },
     { "path": "body[1].sneaky", "message": "unknown field" }
@@ -163,6 +268,11 @@ The validator builds a fresh object out of individually validated values, so the
 parsed request object never reaches the database. Smuggling an extra key through
 is structurally impossible rather than merely checked for.
 
+Validation runs *before* the version check, so a payload that was never going to
+be accepted gets a `400` explaining why, rather than a `428` sending the client
+off to refetch and retry it. That is [RFC 9110
+§13.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-13.2.1).
+
 Validation is deliberately slightly looser than the UI in two places. `category`
 is not restricted to `SEED_CATEGORIES`, so an export made before or after a
 category list change still imports. Bed dimensions are capped at 64 rather than
@@ -172,18 +282,39 @@ top of [`server/src/validation.ts`](server/src/validation.ts).
 ### Importing existing browser data
 
 `POST /api/import` takes `{ seeds, beds, harvests }` — the exact shape of the
-three `localStorage` values — validates all three the same way, and **replaces**
-everything in a single transaction. It never merges. The response says so
-explicitly, and reports what it destroyed:
+three `localStorage` values — validates all three the same way, and stores them
+in a single transaction. It never merges.
+
+**It only runs into an empty garden.** If any collection already holds rows the
+import is refused with `409 import_not_empty` and nothing is saved. There is no
+`force` flag.
+
+That is the one guard import needs, and it is deliberately not a version check:
+first-run migration happens before the client has ever read a version, so there
+is nothing it could put in `If-Match`. Emptiness answers the same question —
+"am I about to destroy something?" — without requiring a version the client
+cannot have. And unlike a version check it cannot be satisfied by simply
+refetching, which is the point: a stale browser snapshot must not be able to
+replace a real season's records just because it asked twice.
+
+On success every version is bumped from `0` to `1`, so a tab that read the empty
+garden before the import cannot then write over it:
 
 ```json
 {
   "mode": "replace",
-  "message": "Import replaced all existing data. 3 seeds, 1 bed and 2 harvests were deleted and 12 seeds, 4 beds and 30 harvests were stored.",
-  "replaced": { "seeds": 3, "beds": 1, "harvests": 2 },
-  "imported": { "seeds": 12, "beds": 4, "harvests": 30 }
+  "message": "Imported the snapshot into an empty garden...",
+  "imported": { "seeds": 12, "beds": 4, "harvests": 30 },
+  "versions": { "seeds": "\"1\"", "beds": "\"1\"", "harvests": "\"1\"" }
 }
 ```
+
+Those versions are usable `If-Match` values immediately.
+
+If the garden is not empty — she added a bed while looking around before
+migrating her other device — the way in is a normal versioned `PUT` per
+collection: `GET` it, fold the browser records into what is there, and save.
+Nothing is destroyed and the stray bed survives. The `409` message says so.
 
 All three keys are required. Omitting one is an error rather than an implicit
 "wipe that collection", because the destructive reading of an ambiguous payload
@@ -208,6 +339,9 @@ idempotent.
 Adding one means appending to the array — never editing an applied entry, since
 the ledger records versions rather than checksums and an edit would silently
 never re-run. The rules are written at the top of that file.
+
+Two so far: `1` builds `seeds`, `beds` and `harvests`; `2` adds
+`collection_versions`, the counter behind the `ETag` on every collection.
 
 ## Configuration
 
@@ -385,9 +519,10 @@ HTTP and SQLite rather than mocks of them. Coverage:
 | ----------------------- | ---------------------------------------------------------- |
 | `migrations.test.ts`    | applying from empty, re-running as a no-op, WAL, pragmas    |
 | `config.test.ts`        | `DATA_DIR` resolution, creation on boot, `BASE_PATH` parsing |
-| `api.test.ts`           | each collection round-tripping, order, health, 404s         |
+| `api.test.ts`           | each collection round-tripping, order, health, 404s, error shape |
 | `validation.test.ts`    | every rejection rule, and the error body shape              |
-| `import.test.ts`        | replace semantics, reported counts, partial payloads        |
+| `concurrency.test.ts`   | ETags, `If-Match`, 409/428, one winner per race, restart    |
+| `import.test.ts`        | the emptiness guard, reported counts, partial payloads      |
 | `transactions.test.ts`  | a failed write leaving the previous collection intact       |
 | `static.test.ts`        | cache headers, SPA fallback, mounting under a prefix        |
 
@@ -397,7 +532,7 @@ HTTP and SQLite rather than mocks of them. Coverage:
 | ----- | --------------------------------------------------------- | ------------- |
 | 1     | workspaces, server, API, tests                            | **done**      |
 | 2     | auth and sessions                                         | **cancelled** |
-| 3     | client reads and writes the API instead of `localStorage` | next          |
+| 3     | client reads and writes the API instead of `localStorage` | **done**      |
 | 4     | packaging as a Home Assistant add-on                      | **done**      |
 
 **There is no authentication and there will not be.** The app is deployed as a
@@ -516,24 +651,41 @@ Class strings are written out in full. Tailwind scans source text literally, so
 a constructed name like `` `bg-${hue}-100` `` never reaches the stylesheet and
 the colour would vanish from a production build.
 
-## Storage keys
+## Storage keys and the one-time migration
 
-`App` still owns all persisted state and writes it under these namespaced keys.
-Phase 3 replaces this layer with the API; the keys are what
-`POST /api/import` exists to ingest.
+The API is the only place the app persists anything. These keys are what the
+pre-server builds wrote, and what `POST /api/import` exists to ingest:
 
-| Key            | Contents          |
-| -------------- | ----------------- |
-| `hpt.seeds`    | `SeedPacket[]`    |
-| `hpt.beds`     | `GardenBed[]`     |
-| `hpt.harvests` | `HarvestLog[]`    |
+| Key                 | Contents                            |
+| ------------------- | ----------------------------------- |
+| `hpt.seeds`         | `SeedPacket[]`                      |
+| `hpt.beds`          | `GardenBed[]`                       |
+| `hpt.harvests`      | `HarvestLog[]`                      |
+| `hpt.serverImport`  | when the copy across was confirmed  |
 
-Reads and writes go through
-[`useLocalStorage`](client/src/hooks/useLocalStorage.ts), which parses lazily,
-falls back to the supplied initial value on missing or corrupt data, and
-swallows quota errors so a full disk never crashes the app. The starter dataset
-used as that fallback lives in
-[`client/src/lib/seedData.ts`](client/src/lib/seedData.ts).
+[`client/src/lib/localSnapshot.ts`](client/src/lib/localSnapshot.ts) reads the
+first three by key, so it keeps working now that `useLocalStorage` is gone. On
+the first run against an empty garden the app offers to copy what it finds to
+the server, reporting exactly what it found ("2 seed packets, 1 bed and 1
+harvest entry"). Two rules hold throughout:
+
+1. **Nothing is deleted from the browser** — before or after a successful
+   import. It costs a few kilobytes and it is the only fallback if the server is
+   lost before its first backup.
+2. **Nothing is copied without being asked**, and `hpt.serverImport` is written
+   only once the server confirms, so a failed import leaves the offer standing.
+
+`POST /api/import` only lands on a wholly empty garden, and the offer is only
+made while the garden reads as empty, so an import never destroys anything. If
+another device writes in the moment between, the server answers
+`409 import_not_empty` with every collection's current state, which the client
+folds the browser copy into with ordinary versioned `PUT`s. Merging is by id, so
+a second device offering the same `localStorage` is a no-op rather than a
+duplicate. Nothing is ever wiped, and there is no "replace everything" button.
+
+With no browser copy to move, the same card offers the sample garden in
+[`client/src/lib/seedData.ts`](client/src/lib/seedData.ts) instead. Both are
+opt-in: a tracker that invents rows on first launch is one you cannot trust.
 
 `activeView` is deliberately **not** persisted — the app always opens on the
 Bed Planner.
@@ -541,15 +693,50 @@ Bed Planner.
 ## Architecture
 
 `App` holds every piece of state at the top level and passes it down as props;
-the views are presentational and mutate through the setters they receive.
+the views are presentational and mutate through the setters they receive. The
+state itself comes from [`useGardenData`](client/src/hooks/useGardenData.ts),
+which keeps the `(data, setData)` contract the views already had.
 
 ```
 App
-├── Sidebar            { activeView, onChange }
+├── Sidebar            { activeView, onChange, status, onRetry }
+├── SyncBanner         { status, onRetry }
+├── ConflictChooser    { conflicts, onResolve, onResolveAll }
+├── FirstRunCard       { local, phase, onImport, onDismiss }
 ├── BedPlannerView     { beds, setBeds, seeds }
 ├── SeedVaultView      { seeds, setSeeds }
 └── HarvestLogView     { harvests, setHarvests, seeds }
 ```
+
+### Talking to the API
+
+Three modules, in layers:
+
+- [`client/src/lib/api.ts`](client/src/lib/api.ts) — resolves URLs against the
+  document base. Use it for every request rather than writing a path by hand;
+  an absolute `/api/...` breaks under ingress.
+- [`client/src/lib/apiClient.ts`](client/src/lib/apiClient.ts) — the only module
+  that speaks HTTP. Classifies failures (`network`, `stale`, `rejected`,
+  `server`, `malformed`) rather than stringifying them, and carries each
+  collection's opaque version.
+- [`client/src/hooks/useGardenData.ts`](client/src/hooks/useGardenData.ts) —
+  loading, optimistic writes, retries and merges.
+
+Every edit lands in local state immediately and is written behind the user's
+back, so the UI never waits for a round trip. Writes for one collection are
+serialised and rapid edits collapse into the next request. A failed save keeps
+the edit on screen and queued; it retries on the next edit, on reconnect, or
+when the user asks.
+
+Because `PUT` replaces a whole collection, every write declares the version it
+read (`If-Match`) and the server answers `409` rather than letting a stale tab
+erase what another device saved. That is routine, not an error: the response
+carries the current state, so the client runs an item-level three-way merge
+([`client/src/lib/merge.ts`](client/src/lib/merge.ts)) and retries in one round
+trip. Only genuinely divergent pairs — the same record changed differently in
+both places, or changed here and deleted there — reach the user, and then per
+item rather than all-or-nothing, worded as "changed on another device" rather
+than in the language of version control.
 
 Shared building blocks:
 
@@ -559,8 +746,6 @@ Shared building blocks:
   tiles.
 - `client/src/lib/id.ts` — `createId(prefix?)`, the single source of ids for new
   records. Use it instead of array indices for React keys.
-- `client/src/lib/api.ts` — resolves API URLs against the document base. Use it
-  for every request rather than writing a path by hand.
 
 ### Project layout
 
@@ -575,9 +760,12 @@ client/
     ├── main.tsx                  React entry point
     ├── index.css                 Tailwind entry + base layer
     ├── types.ts                  re-exports @hpt/shared + view prop contracts
-    ├── hooks/useLocalStorage.ts  typed localStorage-backed state
+    ├── hooks/useGardenData.ts    API-backed state, optimistic saves, merges
     ├── lib/
     │   ├── api.ts                base-path-aware API URLs
+    │   ├── apiClient.ts          typed fetch layer, versions and failures
+    │   ├── merge.ts              item-level three-way merge
+    │   ├── localSnapshot.ts      the pre-server browser copy, read-only
     │   ├── id.ts                 createId helper
     │   ├── seedData.ts           DEFAULT_SEEDS / DEFAULT_BEDS / DEFAULT_HARVESTS
     │   ├── categoryTheme.ts      shared crop-family colour palette
@@ -585,7 +773,12 @@ client/
     │   ├── rotation.ts           layout edits + crop-rotation conflicts
     │   └── harvest.ts            day grouping, totals, local date parsing
     └── components/
-        ├── Sidebar.tsx
+        ├── Sidebar.tsx           + SyncStatus.tsx (the live save footer)
+        ├── SyncBanner.tsx        offline and save-failure notices
+        ├── ConflictChooser.tsx   per-item "changed on another device"
+        ├── FirstRunCard.tsx      the one-time copy-across offer
+        ├── GardenLoading.tsx     quiet skeleton, only after 250ms
+        ├── GardenUnavailable.tsx the server could not be reached
         ├── BedPlannerView.tsx    + bed-planner/
         ├── SeedVaultView.tsx     + seed-vault/
         ├── HarvestLogView.tsx    + harvest-log/
