@@ -20,7 +20,7 @@
     "check:addon": "node scripts/build-addon.mjs --check",
     "typecheck": "npm run build:shared && npm run typecheck --workspaces --if-present",
     "lint": "npm run build:shared && npm run lint --workspaces --if-present",
-    "test": "npm run build:shared && npm run test --workspace @hpt/server",
+    "test": "npm run build:shared && npm run test --workspaces --if-present",
     "dev": "npm run build:shared && concurrently --names server,client --prefix-colors green,cyan --kill-others-on-fail \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "npm run dev --workspace @hpt/server",
     "dev:client": "npm run dev --workspace @hpt/client",
