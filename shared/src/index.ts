@@ -156,3 +156,30 @@ export interface ImportResultBody {
   /** Versions after the import, so the client can write again without a GET. */
   versions: Record<CollectionName, VersionToken>;
 }
+
+/**
+ * Home Assistant.
+ *
+ * The app is deployed as an HA add-on, so it can read her weather forecast, warn
+ * about frost against what is actually planted, publish harvest totals back as
+ * sensors and notify her phone. None of that may become load-bearing: the app
+ * has to run identically with no Home Assistant at all, which is how it is
+ * developed and how the tests run.
+ *
+ * What is shared is the *shape* of the answer, and nothing else. The bands, the
+ * crop-family mapping and the assessment are runtime code and live in
+ * `server/src/ha/`, along with everything that talks to Supervisor — partly
+ * because `SUPERVISOR_TOKEN` must never reach the browser, and partly because
+ * the add-on image does not ship this package at all. See the note at the top
+ * of `homeAssistant.ts`; it is the difference between the add-on booting and
+ * not.
+ */
+export type {
+  BedAtRisk,
+  ForecastPrecision,
+  FrostSeverity,
+  FrostWatch,
+  HomeAssistantBody,
+  HomeAssistantUnavailableReason,
+  Tenderness,
+} from './homeAssistant.js';

@@ -19,6 +19,7 @@ import type {
   CollectionName,
   GardenBed,
   HarvestLog,
+  HomeAssistantBody,
   ImportResultBody,
   SeedPacket,
   VersionToken,
@@ -93,7 +94,27 @@ const HARVESTS: CollectionEndpoint<HarvestLog> = {
   validate: validateHarvests,
 };
 
-function mountCollection<T>(router: Router, db: Database, endpoint: CollectionEndpoint<T>): void {
+/** Everything the API needs beyond the database. All of it optional. */
+export interface ApiRouterOptions {
+  /**
+   * Told after any write that changes what Home Assistant publishes.
+   *
+   * Optional and fire-and-forget by design: on a laptop there is no Home
+   * Assistant and this is simply absent, and even when present the request must
+   * not wait on it. A harvest is saved at exactly the speed it was before this
+   * feature existed.
+   */
+  onGardenChanged?: () => void;
+  /** Answers `GET /api/home-assistant`. Absent means "there is no Home Assistant". */
+  homeAssistant?: () => HomeAssistantBody;
+}
+
+function mountCollection<T>(
+  router: Router,
+  db: Database,
+  endpoint: CollectionEndpoint<T>,
+  options: ApiRouterOptions,
+): void {
   /** Version and contents read together, so the ETag always describes the body beside it. */
   const readCurrent = (): { version: number; items: T[] } =>
     withTransaction(db, () => ({
@@ -178,10 +199,14 @@ function mountCollection<T>(router: Router, db: Database, endpoint: CollectionEn
     // so it is proof of what was actually stored.
     res.set('ETag', versionToken(write.version));
     res.json(write.items);
+
+    // After the response, never before it. Home Assistant is downstream of her
+    // garden, not in front of it.
+    options.onGardenChanged?.();
   });
 }
 
-export function createApiRouter(db: Database): Router {
+export function createApiRouter(db: Database, options: ApiRouterOptions = {}): Router {
   const router = express.Router();
 
   router.use(
@@ -210,9 +235,33 @@ export function createApiRouter(db: Database): Router {
     });
   });
 
-  mountCollection(router, db, SEEDS);
-  mountCollection(router, db, BEDS);
-  mountCollection(router, db, HARVESTS);
+  mountCollection(router, db, SEEDS, options);
+  mountCollection(router, db, BEDS, options);
+  mountCollection(router, db, HARVESTS, options);
+
+  /**
+   * What Home Assistant has to say about her garden, for the frost banner.
+   *
+   * Deliberately **not** a proxy to Home Assistant. The browser gets a small,
+   * purpose-built body containing only what the banner renders, because the
+   * credential this server uses to reach Home Assistant — `SUPERVISOR_TOKEN` —
+   * would be catastrophic to expose and is not needed to draw a warning.
+   *
+   * Always `200`, and always fast. "There is no Home Assistant here" is a
+   * normal answer that arrives as data (`available: false`), not as a `404`, a
+   * `503` or a timeout, because the app is developed and tested on a laptop
+   * where that is the permanent state of affairs. The client renders nothing
+   * and there is no error state to design.
+   *
+   * The response is built from a cached forecast plus a local database read.
+   * Nothing in this handler can touch the network, so Home Assistant being
+   * slow, restarting or absent cannot make this endpoint slow.
+   */
+  router.get('/home-assistant', (_req, res) => {
+    res.json(
+      options.homeAssistant?.() ?? { available: false, reason: 'not_configured', frost: null },
+    );
+  });
 
   /**
    * The migration path off `localStorage`. His wife's phone and laptop each hold
@@ -295,6 +344,9 @@ export function createApiRouter(db: Database): Router {
       },
       versions: tokenise(outcome.versions),
     } satisfies ImportResultBody);
+
+    // An import is the largest change the garden ever sees in one go.
+    options.onGardenChanged?.();
   });
 
   router.use((req, res) => {

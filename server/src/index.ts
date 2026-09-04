@@ -6,6 +6,7 @@ import { baseHref, loadConfig } from './config.ts';
 import { createApp } from './app.ts';
 import { journalMode, openDatabase } from './db/open.ts';
 import { runMigrations } from './db/migrate.ts';
+import { HomeAssistantService } from './ha/service.ts';
 
 function main(): void {
   const config = loadConfig();
@@ -22,7 +23,25 @@ function main(): void {
       : `Schema already at version ${report.currentVersion}`,
   );
 
-  const { app, clientMounted } = createApp({ db, config });
+  // `null` whenever there is no SUPERVISOR_TOKEN, which is every deployment
+  // that is not the Home Assistant add-on — including `npm run dev`. Nothing
+  // starts, nothing is polled and no request is ever made in that case.
+  const homeAssistant = HomeAssistantService.create({ db, env: config.homeAssistant });
+
+  if (homeAssistant === null) {
+    console.log('Home Assistant integration disabled (no SUPERVISOR_TOKEN).');
+  }
+
+  const { app, clientMounted } = createApp({
+    db,
+    config,
+    homeAssistant: homeAssistant
+      ? {
+          onGardenChanged: () => homeAssistant.onGardenChanged(),
+          homeAssistant: () => homeAssistant.snapshot(),
+        }
+      : undefined,
+  });
 
   const server = app.listen(config.port, config.host, () => {
     console.log(
@@ -33,6 +52,10 @@ function main(): void {
         ? `Serving the client bundle from ${config.clientDir}`
         : 'API only — no client bundle is being served',
     );
+
+    // Started only after the socket is up, so a slow Supervisor can never
+    // delay the app becoming answerable.
+    homeAssistant?.start();
   });
 
   let shuttingDown = false;
@@ -42,6 +65,8 @@ function main(): void {
     shuttingDown = true;
 
     console.log(`Received ${signal}, shutting down`);
+
+    homeAssistant?.stop();
 
     server.close(() => {
       // Closing the handle checkpoints the WAL, so the .db file is complete on

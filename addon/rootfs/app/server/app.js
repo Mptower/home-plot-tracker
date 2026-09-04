@@ -8,7 +8,7 @@ import express from 'express';
 import { errorHandler, requestLogger, sendError } from "./http.js";
 import { createApiRouter } from "./routes/api.js";
 import { mountClient } from "./static.js";
-export function createApp({ db, config }) {
+export function createApp({ db, config, homeAssistant }) {
     const app = express();
     // Nothing here benefits from advertising the framework.
     app.disable('x-powered-by');
@@ -20,7 +20,7 @@ export function createApp({ db, config }) {
         app.use(requestLogger());
     }
     // Mounted under the configured prefix so the whole app can live at a sub-path.
-    app.use(`${config.basePath}/api`, createApiRouter(db));
+    app.use(`${config.basePath}/api`, createApiRouter(db, homeAssistant));
     let clientMounted = false;
     if (config.serveClient) {
         const result = mountClient(app, config.clientDir, config.basePath);
