@@ -1,0 +1,29 @@
+# The Home Plot Tracker — Home Assistant add-on
+#
+# Ingress-only by design. There is deliberately no `ports:` mapping: the app has
+# no authentication of its own, so every request must arrive through HA's
+# ingress proxy, which has already authenticated the user's HA session.
+name: The Home Plot Tracker
+slug: home_plot_tracker
+version: "0.1.0"
+description: Plan garden beds, catalogue seed packets and log every harvest, alongside the rest of your home.
+url: https://github.com/Mptower/home-plot-tracker
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+# The image is a plain Node runtime rather than an s6-overlay base, so there is
+# no supervisory init to hand off to. run.sh execs Node as PID 1 and the server
+# handles SIGTERM itself, closing SQLite cleanly on stop.
+init: false
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:sprout
+panel_title: Garden
+panel_admin: false
+# /data is mounted automatically and is the volume HA's own backups snapshot,
+# so the SQLite database is included in every backup with no configuration.
+# `hot` would back the file up while it is open; stopping the add-on first
+# checkpoints the WAL into the .db file, so take the cold copy.
+backup: cold

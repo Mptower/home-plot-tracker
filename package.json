@@ -16,6 +16,8 @@
   "scripts": {
     "build:shared": "npm run build --workspace @hpt/shared",
     "build": "npm run build:shared && npm run build --workspace @hpt/client && npm run build --workspace @hpt/server",
+    "build:addon": "npm run build && node scripts/build-addon.mjs",
+    "check:addon": "node scripts/build-addon.mjs --check",
     "typecheck": "npm run build:shared && npm run typecheck --workspaces --if-present",
     "lint": "npm run build:shared && npm run lint --workspaces --if-present",
     "test": "npm run build:shared && npm run test --workspace @hpt/server",

@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - run: npm run build
+
+      # Supervisor clones this repository and builds the add-on from it as-is,
+      # so the staged tree under addon/rootfs/app is what actually ships. It has
+      # to match the sources it was generated from.
+      - name: Add-on build context is up to date
+        run: npm run check:addon
+
+  addon-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same build Supervisor performs on the Home Assistant machine, with
+      # the add-on directory as the context. Catches a broken Dockerfile or a
+      # missing staged file before anyone tries to install it.
+      - name: Build the add-on image
+        run: docker build --tag home-plot-tracker-addon:ci addon
+
+      - name: Run it and check it serves the app
+        run: |
+          docker run --detach --name hpt --publish 8099:8099 home-plot-tracker-addon:ci
+          for i in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:8099/api/health; then break; fi
+            sleep 1
+          done
+          echo
+          curl --silent --fail --output /dev/null http://127.0.0.1:8099/
+          curl --silent --fail --output /dev/null http://127.0.0.1:8099/api/seeds
+          docker logs hpt
+          docker rm --force hpt

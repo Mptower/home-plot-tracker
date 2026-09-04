@@ -1,0 +1,11 @@
+# Shell scripts run inside the add-on's Alpine container. A CRLF line ending
+# turns the shebang into `#!/bin/sh\r`, which the kernel resolves to a program
+# name that does not exist — the container then dies with a bare
+# "no such file or directory". Force LF on checkout, on every platform.
+*.sh text eol=lf
+
+# The staged add-on build context is generated output that is committed so
+# Supervisor can clone and build this repository as-is. Treat it as opaque: with
+# line-ending conversion on, a Windows checkout would rewrite these files and
+# `npm run check:addon` would report a difference that is not really there.
+addon/rootfs/app/** -text
