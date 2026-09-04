@@ -17,16 +17,18 @@ const NAV_ITEMS: NavItem[] = [
 
 export function Sidebar({ activeView, onChange }: SidebarProps) {
   return (
-    <aside className="sticky top-0 flex h-screen w-20 shrink-0 flex-col border-r border-stone-200 bg-white md:w-72">
+    <aside className="sticky top-0 flex h-screen w-20 shrink-0 flex-col border-r border-emerald-100/80 bg-white/80 backdrop-blur-sm md:w-72">
       <div className="flex items-center gap-3 px-4 py-6 md:px-6">
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-sm shadow-emerald-600/30">
           <Leaf className="h-6 w-6" aria-hidden="true" />
         </span>
         <div className="hidden min-w-0 md:block">
-          <h1 className="truncate text-lg font-bold leading-tight tracking-tight text-stone-900">
+          <h1 className="text-base font-bold leading-tight tracking-tight text-stone-900">
             The Home Plot Tracker
           </h1>
-          <p className="truncate text-xs font-medium text-stone-500">Backyard garden, season by season</p>
+          <p className="mt-0.5 text-xs font-medium leading-snug text-stone-500">
+            Backyard garden, season by season
+          </p>
         </div>
       </div>
 

@@ -1,10 +1,15 @@
 /**
- * Pure helpers behind the Bed Planner: variety -> category resolution, the
- * category colour scale, immutable layout edits and crop-rotation conflict
- * detection. Nothing here touches React or storage so it stays easy to reason
- * about and to test.
+ * Pure helpers behind the Bed Planner: variety -> category resolution,
+ * immutable layout edits and crop-rotation conflict detection. Nothing here
+ * touches React or storage so it stays easy to reason about and to test.
+ *
+ * Category colour lives in `categoryTheme` and is re-exported here so the
+ * planner keeps a single import surface.
  */
 import type { GardenBed, SeedPacket } from '../types';
+
+export { getCategoryStyle, UNKNOWN_CATEGORY_STYLE } from './categoryTheme';
+export type { CategoryStyle } from './categoryTheme';
 
 /** Sentinel for "no crop family recorded for last season". */
 export const NO_CATEGORY = '';
@@ -12,74 +17,6 @@ export const NO_CATEGORY = '';
 /** Smallest and largest bed dimension the planner will accept. */
 export const MIN_BED_DIMENSION = 1;
 export const MAX_BED_DIMENSION = 12;
-
-export interface CategoryStyle {
-  /** Border, fill, text and hover classes for a planted grid cell. */
-  cell: string;
-  /** Solid dot used in the legend. */
-  swatch: string;
-  /** Pill treatment for category labels in lists and filters. */
-  chip: string;
-}
-
-/**
- * Full class strings are written out literally so Tailwind's scanner keeps
- * them in the build — never assemble these from fragments.
- */
-const CATEGORY_STYLES: Record<string, CategoryStyle> = {
-  Nightshade: {
-    cell: 'border-rose-300 bg-rose-100 text-rose-900 hover:bg-rose-200',
-    swatch: 'bg-rose-400',
-    chip: 'bg-rose-100 text-rose-800 ring-1 ring-inset ring-rose-300',
-  },
-  Cucurbit: {
-    cell: 'border-yellow-300 bg-yellow-100 text-yellow-900 hover:bg-yellow-200',
-    swatch: 'bg-yellow-400',
-    chip: 'bg-yellow-100 text-yellow-800 ring-1 ring-inset ring-yellow-300',
-  },
-  Brassica: {
-    cell: 'border-teal-300 bg-teal-100 text-teal-900 hover:bg-teal-200',
-    swatch: 'bg-teal-400',
-    chip: 'bg-teal-100 text-teal-800 ring-1 ring-inset ring-teal-300',
-  },
-  Allium: {
-    cell: 'border-violet-300 bg-violet-100 text-violet-900 hover:bg-violet-200',
-    swatch: 'bg-violet-400',
-    chip: 'bg-violet-100 text-violet-800 ring-1 ring-inset ring-violet-300',
-  },
-  Legume: {
-    cell: 'border-emerald-300 bg-emerald-100 text-emerald-900 hover:bg-emerald-200',
-    swatch: 'bg-emerald-400',
-    chip: 'bg-emerald-100 text-emerald-800 ring-1 ring-inset ring-emerald-300',
-  },
-  Root: {
-    cell: 'border-orange-300 bg-orange-100 text-orange-900 hover:bg-orange-200',
-    swatch: 'bg-orange-400',
-    chip: 'bg-orange-100 text-orange-800 ring-1 ring-inset ring-orange-300',
-  },
-  'Leafy Green': {
-    cell: 'border-green-300 bg-green-100 text-green-900 hover:bg-green-200',
-    swatch: 'bg-green-400',
-    chip: 'bg-green-100 text-green-800 ring-1 ring-inset ring-green-300',
-  },
-  Herb: {
-    cell: 'border-sky-300 bg-sky-100 text-sky-900 hover:bg-sky-200',
-    swatch: 'bg-sky-400',
-    chip: 'bg-sky-100 text-sky-800 ring-1 ring-inset ring-sky-300',
-  },
-};
-
-/** Used for plantings whose variety is no longer in the vault. */
-export const UNKNOWN_CATEGORY_STYLE: CategoryStyle = {
-  cell: 'border-stone-300 bg-stone-100 text-stone-700 hover:bg-stone-200',
-  swatch: 'bg-stone-400',
-  chip: 'bg-stone-100 text-stone-700 ring-1 ring-inset ring-stone-300',
-};
-
-export function getCategoryStyle(category: string | null): CategoryStyle {
-  if (!category) return UNKNOWN_CATEGORY_STYLE;
-  return CATEGORY_STYLES[category] ?? UNKNOWN_CATEGORY_STYLE;
-}
 
 /** Label shown when a planted variety has no matching packet in the vault. */
 export const UNKNOWN_CATEGORY_LABEL = 'Uncatalogued';

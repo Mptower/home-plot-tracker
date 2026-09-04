@@ -71,6 +71,63 @@ type ViewId = 'planner' | 'vault' | 'harvest';
 - The prop contracts for each view: `SeedVaultViewProps`, `BedPlannerViewProps`,
   `HarvestLogViewProps` and `SidebarProps`.
 
+## The three views
+
+### 🗺️ Bed Planner
+
+Each bed renders as a real grid of square buttons, sized from its `rows` and
+`columns`. Click a square to assign a variety from the vault, or clear it.
+Squares are tinted by the crop family of whatever is planted, so a bed is
+readable at a glance, and a variety that is no longer in the vault degrades to a
+neutral "Uncatalogued" square rather than breaking the grid.
+
+**Crop rotation warnings.** Every bed remembers `lastYearCategory`. Whenever the
+current layout holds anything from that same family, an amber banner names the
+family dynamically — _"Crop Rotation Warning: Nightshades planted here last
+year!"_ — and each offending square picks up an amber ring. The check runs over
+committed state rather than the click that caused it, so the warning survives a
+reload. It is advice, never a block: planting is always allowed. Dismissing it
+hides that exact conflict set, and creating a new conflict brings it back.
+
+### 🗃️ Seed Vault
+
+A card grid of every packet with search and category filters. Each card
+estimates viability from `purchaseYear`: 95% for a packet bought this season,
+declining 6 points a year through a three-year shelf life and 12 points a year
+after that, floored at 5%. Packets are labelled **Fresh** (0–1 years), **Aging**
+(2–3 years) or **Replace** (more than 3 years). A stale packet gets a rose
+accent, an explicit "sow extra thickly" callout and a place in the "need
+replacing" count. The logic lives in [`src/lib/germination.ts`](src/lib/germination.ts)
+and is pure, with the current year injectable for testing.
+
+### ⚖️ Harvest Log
+
+A split pane: a sticky quick-entry form on the left, the historical feed on the
+right. The form keeps the date between submissions so a single picking session
+is fast to record, and suggests varieties from the vault plus anything typed
+before. The feed sorts newest first and groups entries under day headers with
+per-day subtotals, above a season summary of total weight, items, days logged
+and the top varieties by weight.
+
+Dates are stored as ISO `yyyy-mm-dd` and parsed by splitting the parts into a
+local `Date`. `new Date('2026-09-04')` would be read as UTC midnight and render
+as the previous day in a US timezone, so that path is deliberately avoided.
+
+## Category colour
+
+[`src/lib/categoryTheme.ts`](src/lib/categoryTheme.ts) is the single source of
+truth for crop-family colour, shared by the Seed Vault badges and the Bed
+Planner squares, legend and picker so a family looks the same everywhere.
+
+Three hues are deliberately excluded from that palette because they carry
+meaning elsewhere and would be ambiguous next to a category: **emerald**
+(primary chrome and a bed square's active/hover state), **amber** (rotation
+warnings) and **rose** (a stale packet).
+
+Class strings are written out in full. Tailwind scans source text literally, so
+a constructed name like `` `bg-${hue}-100` `` never reaches the stylesheet and
+the colour would vanish from a production build.
+
 ## Storage keys
 
 `App` owns all persisted state and writes it under these namespaced keys:
@@ -119,13 +176,18 @@ src/
 ├── index.css                     Tailwind entry + base layer
 ├── types.ts                      domain types, prop contracts, constants
 ├── hooks/useLocalStorage.ts      typed localStorage-backed state
-├── lib/id.ts                     createId helper
-├── lib/seedData.ts               DEFAULT_SEEDS / DEFAULT_BEDS / DEFAULT_HARVESTS
+├── lib/
+│   ├── id.ts                     createId helper
+│   ├── seedData.ts               DEFAULT_SEEDS / DEFAULT_BEDS / DEFAULT_HARVESTS
+│   ├── categoryTheme.ts          shared crop-family colour palette
+│   ├── germination.ts            seed-age and viability estimates
+│   ├── rotation.ts               layout edits + crop-rotation conflicts
+│   └── harvest.ts                day grouping, totals, local date parsing
 └── components/
     ├── Sidebar.tsx
-    ├── BedPlannerView.tsx
-    ├── SeedVaultView.tsx
-    ├── HarvestLogView.tsx
+    ├── BedPlannerView.tsx        + bed-planner/
+    ├── SeedVaultView.tsx         + seed-vault/
+    ├── HarvestLogView.tsx        + harvest-log/
     ├── ViewHeader.tsx
     └── ViewSummaryCard.tsx
 ```

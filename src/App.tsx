@@ -18,11 +18,11 @@ export default function App() {
   const [activeView, setActiveView] = useState<ViewId>('planner');
 
   return (
-    <div className="flex min-h-screen bg-stone-50 text-stone-900">
+    <div className="flex min-h-screen text-stone-900">
       <Sidebar activeView={activeView} onChange={setActiveView} />
 
       <main className="min-w-0 flex-1 px-4 py-8 sm:px-8 lg:px-12">
-        <div className="mx-auto w-full max-w-5xl">
+        <div className="mx-auto w-full max-w-7xl">
           {activeView === 'planner' && (
             <BedPlannerView beds={beds} setBeds={setBeds} seeds={seeds} />
           )}

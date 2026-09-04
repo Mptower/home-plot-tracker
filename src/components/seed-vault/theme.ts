@@ -36,23 +36,5 @@ export const STATUS_THEME: Record<GerminationStatus, StatusTheme> = {
   },
 };
 
-/**
- * Soft, garden-ish tints so categories are distinguishable at a glance without
- * competing with the emerald/amber/stone chrome the rest of the app uses.
- */
-const CATEGORY_BADGE: Record<string, string> = {
-  Nightshade: 'bg-rose-50 text-rose-700 ring-rose-200',
-  Cucurbit: 'bg-lime-50 text-lime-700 ring-lime-200',
-  Brassica: 'bg-teal-50 text-teal-700 ring-teal-200',
-  Allium: 'bg-violet-50 text-violet-700 ring-violet-200',
-  Legume: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  Root: 'bg-orange-50 text-orange-700 ring-orange-200',
-  'Leafy Green': 'bg-green-50 text-green-700 ring-green-200',
-  Herb: 'bg-sky-50 text-sky-700 ring-sky-200',
-};
-
-const FALLBACK_CATEGORY_BADGE = 'bg-stone-100 text-stone-600 ring-stone-200';
-
-export function getCategoryBadgeClasses(category: string): string {
-  return CATEGORY_BADGE[category] ?? FALLBACK_CATEGORY_BADGE;
-}
+/** Category colour is shared with the Bed Planner so a family reads the same everywhere. */
+export { getCategoryBadgeClasses } from '../../lib/categoryTheme';
