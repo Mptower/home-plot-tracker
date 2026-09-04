@@ -93,6 +93,13 @@ export class HomeAssistantService {
         this.#log(`Home Assistant integration enabled (weather: ${this.#options.weatherEntity}, ` +
             `sensors: sensor.${this.#options.sensorPrefix}_*, ` +
             `notifications: ${this.#options.frostNotifications ? this.#options.notifyService : 'off'}).`);
+        // Every time this integration renders — quiet hours, "Saturday night",
+        // "around 5am" — is read off the ambient zone, which reaches us as `TZ`
+        // from Supervisor and is resolved by Node's bundled tzdata. It costs
+        // nothing to record it, and when a frost warning arrives at the wrong hour
+        // next October this is the first line anyone will want to see.
+        this.#log(`Home Assistant integration timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone} ` +
+            `(TZ=${process.env.TZ ?? 'unset'}, local hour now ${new Date().getHours()}).`);
     }
     stop() {
         this.#stopped = true;

@@ -403,3 +403,148 @@ test('a long variety list is summarised rather than dumped', () => {
 
   assert.match(composed.message, /and 2 more/);
 });
+
+/**
+ * Timezone: the wording and the quiet hours are hers, not the container's.
+ *
+ * These exist because the dependence is invisible and the failure mode is
+ * silent. Quiet hours of 21:00–07:00 read in UTC rather than America/Chicago
+ * become 16:00–02:00 on her clock: her whole afternoon suppressed, and 1am let
+ * through. Nothing would throw, no test would fail, and the first sign would be
+ * a frost warning at the wrong hour some night next October.
+ *
+ * It is sound today, and that was measured rather than reasoned about: a
+ * throwaway add-on install on the target machine reported `TZ=America/Chicago`
+ * injected by Supervisor and a Node zone of `America/Chicago` resolved from
+ * Node's own bundled tzdata — in the same container where busybox `date` said
+ * UTC, because Alpine ships no `/usr/share/zoneinfo`. Node carries its own copy
+ * and the shell does not.
+ *
+ * So these tests guard the assumption rather than the arithmetic. If a future
+ * base image, Node version or Dockerfile change breaks the `TZ` path, this file
+ * fails in CI instead of her garden.
+ */
+
+/**
+ * Runs `fn` with the process timezone forced to `zone`.
+ *
+ * The assertion inside is not decoration. Node currently re-reads
+ * `process.env.TZ` on assignment and resets its date cache, but if that ever
+ * stops being true every test below would quietly start asserting the ambient
+ * zone and pass for entirely the wrong reason — which is precisely the class of
+ * bug this whole block exists to catch.
+ */
+function withTimeZone<T>(zone: string, fn: () => T): T {
+  const previous = process.env.TZ;
+
+  process.env.TZ = zone;
+
+  try {
+    assert.equal(
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+      zone,
+      `forcing TZ=${zone} had no effect, so this test proves nothing`,
+    );
+
+    return fn();
+  } finally {
+    if (previous === undefined) delete process.env.TZ;
+    else process.env.TZ = previous;
+  }
+}
+
+test('quiet hours are her wall clock, not the container clock', () => {
+  // 21:00 UTC is 16:00 in Chicago: her mid-afternoon, and the exact instant a
+  // UTC-bound reading would wrongly silence.
+  const afternoon = new Date('2026-10-09T21:00:00Z');
+
+  assert.equal(
+    withTimeZone('America/Chicago', () =>
+      inQuietHours(afternoon, OPTIONS.quietHoursStartMinutes, OPTIONS.quietHoursEndMinutes),
+    ),
+    false,
+    'four in the afternoon must not be quiet hours',
+  );
+
+  assert.equal(
+    withTimeZone('UTC', () =>
+      inQuietHours(afternoon, OPTIONS.quietHoursStartMinutes, OPTIONS.quietHoursEndMinutes),
+    ),
+    true,
+    'the same instant read as UTC is 21:00 — this is the bug being guarded against',
+  );
+
+  // And the inverse: 11:00 UTC is 06:00 for her, still inside quiet hours.
+  const dawn = new Date('2026-10-10T11:00:00Z');
+
+  assert.equal(
+    withTimeZone('America/Chicago', () =>
+      inQuietHours(dawn, OPTIONS.quietHoursStartMinutes, OPTIONS.quietHoursEndMinutes),
+    ),
+    true,
+    'six in the morning is still quiet hours',
+  );
+
+  assert.equal(
+    withTimeZone('UTC', () =>
+      inQuietHours(dawn, OPTIONS.quietHoursStartMinutes, OPTIONS.quietHoursEndMinutes),
+    ),
+    false,
+  );
+});
+
+test('the coldest-hour wording is rendered in the local zone', () => {
+  // 10:00 UTC — which is 5am for her, the canonical "cover the beds" hour.
+  const coldest = watch({ expectedAt: '2026-10-11T10:00:00Z', precision: 'hour' });
+  const now = new Date('2026-10-09T17:00:00Z');
+
+  assert.match(
+    withTimeZone('America/Chicago', () => composeNotification(coldest, now)).message,
+    /Coldest around 5am\./,
+  );
+
+  assert.match(
+    withTimeZone('Asia/Tokyo', () => composeNotification(coldest, now)).message,
+    /Coldest around 7pm\./,
+  );
+
+  assert.match(
+    withTimeZone('UTC', () => composeNotification(coldest, now)).message,
+    /Coldest around 10am\./,
+  );
+});
+
+test('"tonight" versus "tomorrow night" follows her local date', () => {
+  // 02:00 UTC on the 10th is still 21:00 on the 9th for her, so the frost on
+  // the night of the 10th is tomorrow's problem, not tonight's.
+  const now = new Date('2026-10-10T02:00:00Z');
+
+  assert.equal(
+    withTimeZone('America/Chicago', () => describeNight('2026-10-10', now)),
+    'tomorrow night',
+  );
+
+  assert.equal(
+    withTimeZone('UTC', () => describeNight('2026-10-10', now)),
+    'tonight',
+  );
+});
+
+test('weekday names still render under a non-local zone', () => {
+  // 2026-10-10 is a Saturday; the reviewer's own example sentence.
+  assert.equal(
+    withTimeZone('America/Chicago', () =>
+      describeNight('2026-10-10', new Date('2026-10-07T18:00:00Z')),
+    ),
+    'Saturday night',
+  );
+
+  // Formatting must not quietly degrade to a numeric date on a zone the base
+  // image has never seen before.
+  assert.equal(
+    withTimeZone('Asia/Tokyo', () =>
+      describeNight('2026-10-14', new Date('2026-10-10T02:00:00Z')),
+    ),
+    'Wednesday night',
+  );
+});

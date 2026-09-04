@@ -25,6 +25,36 @@
  * add-on restarts on every update, every Home Assistant reboot and every option
  * change, and an in-memory record would let each of those re-announce a frost
  * she has already dealt with.
+ *
+ * ## Every clock in this file is her local clock
+ *
+ * Quiet hours, "Saturday night" and "around 5am" are all read off the ambient
+ * timezone — `getHours()` and `toLocale*String(undefined, …)`. That is correct
+ * here, but by arrangement rather than by luck, so it is worth writing down.
+ *
+ * Supervisor injects the host timezone into every add-on container as `TZ`
+ * (`ENV_TIME = "TZ"` in Supervisor's `docker/app.py`), and Node resolves that
+ * name against the timezone database bundled into its own ICU. Neither step
+ * needs anything from the base image — which matters, because ours is plain
+ * `node:22-alpine` and not a Home Assistant base image, so none of the usual
+ * `bashio` init that sets up time in other add-ons runs here.
+ *
+ * This was measured rather than assumed. A throwaway add-on install on the
+ * target machine reported `TZ=America/Chicago`, a resolved Node zone of
+ * `America/Chicago` and a `getHours()` matching the wall clock — while busybox
+ * `date`, in the same container at the same instant, reported UTC. Alpine
+ * ships no `/usr/share/zoneinfo`, so the shell cannot resolve the name and
+ * silently falls back; Node carries its own copy and is unaffected. That
+ * asymmetry is why `rootfs/run.sh` carries a warning against doing date
+ * arithmetic in the shell.
+ *
+ * If this ever stops being true the failure is silent and inverted rather than
+ * loud: quiet hours of 21:00–07:00 read in UTC become 16:00–02:00 in Chicago,
+ * suppressing her whole afternoon and permitting 1am. `ha-notify.test.ts` pins
+ * the wording and the quiet-hours arithmetic under a forced `TZ` so a future
+ * base-image change fails in CI instead of six months later in her garden. If
+ * it does break, the fix is to read `time_zone` from `GET /core/api/config` and
+ * format through it explicitly.
  */
 import type { FrostSeverity, FrostWatch } from '@hpt/shared';
 import type { Database } from '../db/open.ts';
@@ -75,7 +105,13 @@ function loadState(db: Database): NotificationState {
   return Array.isArray(state?.records) ? state : { records: [] };
 }
 
-/** `yyyy-mm-dd` local, for pruning by age. */
+/**
+ * `yyyy-mm-dd` in her local zone, for pruning by age.
+ *
+ * Ambient clock (see the note at the top of this file). The least load-bearing
+ * of the four: it only decides when a thirty-day-old record is dropped, so an
+ * hours-wide error would cost nothing.
+ */
 function localIsoDate(date: Date): string {
   const month = `${date.getMonth() + 1}`.padStart(2, '0');
   const day = `${date.getDate()}`.padStart(2, '0');
@@ -97,10 +133,17 @@ function prune(records: NotificationRecord[], now: Date): NotificationRecord[] {
  * switched off entirely rather than lasting all day — the latter would silence
  * every notification forever, which is a nasty way for a misconfiguration to
  * present.
+ *
+ * The comparison is in her local wall-clock time, which is the only reading of
+ * "quiet hours" that means anything — 21:00 is a time on her kitchen clock, not
+ * an instant. This is the site where an ambient-clock error would do real harm;
+ * see the note at the top of this file for why it is sound.
  */
 export function inQuietHours(now: Date, startMinutes: number, endMinutes: number): boolean {
   if (startMinutes === endMinutes) return false;
 
+  // Ambient clock: correct because Supervisor injects `TZ` and Node resolves it
+  // from bundled tzdata. Measured on the target machine, and pinned by test.
   const minutes = now.getHours() * 60 + now.getMinutes();
 
   return startMinutes < endMinutes
@@ -140,6 +183,10 @@ export function describeNight(night: string, now: Date): string {
 
   if (!year || !month || !day) return night;
 
+  // Two ambient-clock reads, both her local zone (see the note at the top of
+  // this file): the night's own local midnight, and today's. `Math.round`
+  // rather than a plain division because a DST boundary between the two makes
+  // the gap 23 or 25 hours rather than 24.
   const date = new Date(year, month - 1, day);
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const days = Math.round((date.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
@@ -147,6 +194,7 @@ export function describeNight(night: string, now: Date): string {
   if (days === 0) return 'tonight';
   if (days === 1) return 'tomorrow night';
   if (days > 1 && days <= 6) {
+    // `undefined` locale and zone: her local weekday name, for the same reason.
     return `${date.toLocaleDateString(undefined, { weekday: 'long' })} night`;
   }
 
@@ -161,6 +209,8 @@ function describeTime(watch: FrostWatch): string {
 
   if (Number.isNaN(at.getTime())) return '';
 
+  // Ambient clock again: `expectedAt` is an instant, and this renders it as the
+  // hour she will read on her own clock. See the note at the top of this file.
   const label = at
     .toLocaleTimeString(undefined, { hour: 'numeric' })
     .replace(/\s/g, '')
