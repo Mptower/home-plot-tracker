@@ -28,8 +28,20 @@ export interface TestServer {
   /** Absolute URL for a path *below the configured base path*. */
   url: (pathname: string) => string;
   get: (pathname: string, init?: RequestInit) => Promise<Response>;
+  /**
+   * `PUT` that fetches the current `ETag` first and sends it as `If-Match`.
+   *
+   * Almost every test cares about what a write *stores*, not about how it
+   * declares its precondition, so the read-then-write dance stays out of them.
+   * Tests that are specifically about concurrency use `putRaw` and drive the
+   * header themselves.
+   */
   putJson: (pathname: string, body: unknown) => Promise<Response>;
+  /** `PUT` with exactly the headers given — no `If-Match` unless you supply one. */
+  putRaw: (pathname: string, body: unknown, headers?: Record<string, string>) => Promise<Response>;
   postJson: (pathname: string, body: unknown) => Promise<Response>;
+  /** The current `ETag` of a collection, ready to be used as `If-Match`. */
+  etag: (pathname: string) => Promise<string>;
   close: () => Promise<void>;
 }
 
@@ -64,12 +76,27 @@ export async function startServer(
   const url = (pathname: string): string =>
     `${origin}${config.basePath}${pathname.startsWith('/') ? pathname : `/${pathname}`}`;
 
-  const sendJson = (method: string) => (pathname: string, body: unknown) =>
-    fetch(url(pathname), {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+  const sendJson =
+    (method: string) =>
+    (pathname: string, body: unknown, headers: Record<string, string> = {}) =>
+      fetch(url(pathname), {
+        method,
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify(body),
+      });
+
+  const putRaw = sendJson('PUT');
+
+  const etag = async (pathname: string): Promise<string> => {
+    const response = await fetch(url(pathname));
+    const tag = response.headers.get('etag');
+
+    if (tag === null) {
+      throw new Error(`GET ${pathname} returned no ETag (status ${response.status})`);
+    }
+
+    return tag;
+  };
 
   return {
     origin,
@@ -79,8 +106,12 @@ export async function startServer(
     tempDir: dir,
     url,
     get: (pathname, init) => fetch(url(pathname), init),
-    putJson: sendJson('PUT'),
-    postJson: sendJson('POST'),
+    putRaw,
+    async putJson(pathname, body) {
+      return putRaw(pathname, body, { 'If-Match': await etag(pathname) });
+    },
+    postJson: (pathname, body) => sendJson('POST')(pathname, body),
+    etag,
     async close() {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));

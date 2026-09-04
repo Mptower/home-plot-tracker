@@ -55,7 +55,7 @@ export function createApp({ db, config }: CreateAppOptions): AppInfo {
   }
 
   app.use((req, res) => {
-    sendError(res, 404, `Not found: ${req.method} ${req.originalUrl}`);
+    sendError(res, 404, 'not_found', `Not found: ${req.method} ${req.originalUrl}`);
   });
 
   app.use(errorHandler(config.isProduction));
