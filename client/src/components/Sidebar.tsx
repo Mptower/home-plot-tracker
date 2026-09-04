@@ -1,4 +1,4 @@
-import { LayoutGrid, Leaf, Scale, Sprout } from 'lucide-react';
+import { LayoutGrid, Leaf, Scale, SlidersHorizontal, Sprout } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { SyncStatus } from './SyncStatus';
 import type { SidebarProps, ViewId } from '../types';
@@ -14,6 +14,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'planner', label: 'Bed Planner', description: 'Map every square', icon: LayoutGrid },
   { id: 'vault', label: 'Seed Vault', description: 'Packets on hand', icon: Sprout },
   { id: 'harvest', label: 'Harvest Log', description: 'Weigh the yield', icon: Scale },
+  { id: 'settings', label: 'Settings', description: 'Frost and quiet hours', icon: SlidersHorizontal },
 ];
 
 export function Sidebar({ activeView, onChange, status, onRetry }: SidebarProps) {

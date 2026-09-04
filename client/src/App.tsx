@@ -12,6 +12,7 @@ import { Sidebar } from './components/Sidebar';
 import { BedPlannerView } from './components/BedPlannerView';
 import { SeedVaultView } from './components/SeedVaultView';
 import { HarvestLogView } from './components/HarvestLogView';
+import { SettingsView } from './components/SettingsView';
 import { ConflictChooser } from './components/ConflictChooser';
 import { FirstRunCard } from './components/FirstRunCard';
 import type { FirstRunPhase } from './components/FirstRunCard';
@@ -164,6 +165,7 @@ export default function App() {
                   seeds={garden.seeds}
                 />
               )}
+              {activeView === 'settings' && <SettingsView />}
             </>
           )}
         </div>

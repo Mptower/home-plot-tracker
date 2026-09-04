@@ -1,9 +1,11 @@
 import { listBeds, listHarvests, listSeeds } from "../db/collections.js";
+import { readSettings } from "../db/settings.js";
+import { parseTimeOfDay } from "../config.js";
 import { HomeAssistantClient } from "./client.js";
 import { resolveHomeAssistantOptions } from "./options.js";
 import { assessFrostRisk } from "./frost.js";
 import { readForecast } from "./forecast.js";
-import { buildSensorPayloads, findWritableSensors, publishSensors } from "./sensors.js";
+import { PUBLISHED_SENSORS, buildSensorPayloads, findWritableSensors, publishSensors } from "./sensors.js";
 import { decideNotification, recordNotification } from "./notifier.js";
 /** How often to re-read the forecast. */
 const FORECAST_INTERVAL_MS = 15 * 60 * 1000;
@@ -92,7 +94,17 @@ export class HomeAssistantService {
         this.#sensorTimer.unref?.();
         this.#log(`Home Assistant integration enabled (weather: ${this.#options.weatherEntity}, ` +
             `sensors: sensor.${this.#options.sensorPrefix}_*, ` +
-            `notifications: ${this.#options.frostNotifications ? this.#options.notifyService : 'off'}).`);
+            `notify service: ${this.#options.notifyService}).`);
+        // A snapshot for the log, not a cached value. Frost notifications and quiet
+        // hours are read from the database at the moment each decision is made —
+        // see `#notifyOptions` — so changing them in the app takes effect on the
+        // next poll rather than on the next restart, which is the entire point of
+        // moving them out of the add-on's options.
+        const settings = readSettings(this.#db, this.#warn);
+        this.#log(`Frost notifications are ${settings.frostNotifications ? 'on' : 'off'}, ` +
+            `quiet hours ${settings.quietHoursStart === settings.quietHoursEnd
+                ? 'disabled'
+                : `${settings.quietHoursStart}–${settings.quietHoursEnd}`}. Change these in the app's Settings page.`);
         // Every time this integration renders — quiet hours, "Saturday night",
         // "around 5am" — is read off the ambient zone, which reaches us as `TZ`
         // from Supervisor and is resolved by Node's bundled tzdata. It costs
@@ -163,6 +175,72 @@ export class HomeAssistantService {
         }
         return { available: true, reason: null, frost: this.#assess() };
     }
+    /**
+     * The plumbing, for the Settings page's status block.
+     *
+     * Distinct from `snapshot()` in what it is for: `snapshot()` answers "is a
+     * frost coming?", and this answers "is any of this working?". A blank frost
+     * banner is the correct display for both a healthy September and a broken
+     * integration, and without somewhere to look the two are indistinguishable.
+     *
+     * Same rules as `snapshot()` — synchronous, local, and never a failure.
+     */
+    status() {
+        const frost = this.#forecastKnown && this.#reachable ? this.#assess() : null;
+        return {
+            configured: true,
+            connected: this.#reachable,
+            reason: !this.#reachable ? 'unreachable' : this.#forecastKnown ? null : 'no_forecast',
+            weatherEntity: this.#options.weatherEntity,
+            notifyService: this.#options.notifyService,
+            sensors: PUBLISHED_SENSORS.map((name) => `sensor.${this.#options.sensorPrefix}_${name}`),
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            // `none` is a real answer and a different thing from "no answer yet": it
+            // means a forecast was read and nothing planted minds the low.
+            frostRisk: this.#forecastKnown && this.#reachable ? (frost?.severity ?? 'none') : null,
+            forecastObservedAt: this.#forecast?.observedAt ?? null,
+        };
+    }
+    /**
+     * The notification preferences, read fresh from the database every time.
+     *
+     * Deliberately not cached on the instance. These are hers to change from the
+     * Settings page, and a copy taken at construction would mean her answer to
+     * "should this wake me?" did not apply until the add-on next restarted. Read
+     * here, at the moment the decision is made, a change is honoured by the very
+     * next poll and there is no stale window at all.
+     *
+     * The `HH:MM` strings become minutes from local midnight here, which is the
+     * form `inQuietHours` compares against the ambient wall clock. That reading
+     * of the clock is deliberate and measured — see the note at the top of
+     * `notifier.ts` — and converting a freshly-read setting rather than a cached
+     * one does not disturb it: the bounds are still wall-clock minutes, still
+     * compared against her local hour.
+     */
+    #notifyOptions() {
+        const settings = readSettings(this.#db, this.#warn);
+        return {
+            enabled: settings.frostNotifications,
+            quietHoursStartMinutes: this.#minutes(settings.quietHoursStart, '21:00'),
+            quietHoursEndMinutes: this.#minutes(settings.quietHoursEnd, '07:00'),
+        };
+    }
+    /**
+     * `HH:MM` to minutes from midnight, falling back rather than throwing.
+     *
+     * `readSettings` already rejects anything that is not `HH:MM`, so this only
+     * fires if the two ever disagree. A throw here would be on a timer, inside a
+     * poll, which is not a place to discover a validation gap.
+     */
+    #minutes(value, fallback) {
+        try {
+            return parseTimeOfDay('quiet hours', value);
+        }
+        catch {
+            this.#warn(`Ignoring the stored quiet-hours value ${JSON.stringify(value)}; using ${fallback}.`);
+            return parseTimeOfDay('quiet hours', fallback);
+        }
+    }
     #assess() {
         if (this.#forecast === null)
             return null;
@@ -228,11 +306,7 @@ export class HomeAssistantService {
     }
     async #maybeNotify() {
         const watch = this.#assess();
-        const decision = decideNotification(this.#db, watch, {
-            enabled: this.#options.frostNotifications,
-            quietHoursStartMinutes: this.#options.quietHoursStartMinutes,
-            quietHoursEndMinutes: this.#options.quietHoursEndMinutes,
-        });
+        const decision = decideNotification(this.#db, watch, this.#notifyOptions());
         if (!decision.send || watch === null)
             return;
         const [domain, service] = this.#options.notifyService.split('.');

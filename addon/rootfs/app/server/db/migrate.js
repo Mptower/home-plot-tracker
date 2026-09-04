@@ -1,4 +1,4 @@
-import { MIGRATIONS } from "./migrations.js";
+import { DEFAULT_MIGRATION_CONTEXT, MIGRATIONS } from "./migrations.js";
 const CREATE_LEDGER = `
   CREATE TABLE IF NOT EXISTS schema_migrations (
     version    INTEGER PRIMARY KEY,
@@ -23,7 +23,15 @@ export function appliedVersions(db) {
     const rows = db.prepare('SELECT version FROM schema_migrations ORDER BY version').all();
     return rows.map((row) => Number(row.version));
 }
-export function runMigrations(db, migrations = MIGRATIONS) {
+/**
+ * Applies whatever is missing, in order, each in its own transaction.
+ *
+ * `context` carries the handful of values a migration cannot get from the
+ * database — today just the settings seed. It defaults to a fresh garden's
+ * values, which is what the tests and any non-add-on deployment want; the
+ * add-on's real options are supplied by `index.ts`.
+ */
+export function runMigrations(db, migrations = MIGRATIONS, context = DEFAULT_MIGRATION_CONTEXT) {
     assertUniqueVersions(migrations);
     const already = new Set(appliedVersions(db));
     const ordered = [...migrations].sort((a, b) => a.version - b.version);
@@ -37,7 +45,7 @@ export function runMigrations(db, migrations = MIGRATIONS) {
         // at all — including its ledger row.
         db.exec('BEGIN IMMEDIATE');
         try {
-            migration.up(db);
+            migration.up(db, context);
             db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)').run(migration.version, migration.name, new Date().toISOString());
             db.exec('COMMIT');
         }

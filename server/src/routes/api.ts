@@ -12,6 +12,10 @@
  * optimistic-update story and a merge strategy, for one user editing a few dozen
  * rows. Replace is cheaper to write, far cheaper to reason about, and trivially
  * atomic.
+ *
+ * `/settings` is the one endpoint that is not a collection. It is a singleton —
+ * one object in, one object out — and it deliberately does not take `If-Match`.
+ * The reasoning is written out at the handler.
  */
 import express from 'express';
 import type { Router } from 'express';
@@ -21,6 +25,7 @@ import type {
   HarvestLog,
   HomeAssistantBody,
   ImportResultBody,
+  IntegrationStatusBody,
   SeedPacket,
   VersionToken,
 } from '@hpt/shared';
@@ -34,6 +39,7 @@ import {
   replaceHarvests,
   replaceSeeds,
 } from '../db/collections.ts';
+import { readSettings, writeSettings } from '../db/settings.ts';
 import { bumpVersion, readAllVersions, readVersion, replaceIfCurrent } from '../db/versions.ts';
 import { appliedVersions } from '../db/migrate.ts';
 import {
@@ -46,7 +52,13 @@ import {
   versionToken,
 } from '../http.ts';
 import type { ValidationResult } from '../validation.ts';
-import { validateBeds, validateHarvests, validateSeeds, validateSnapshot } from '../validation.ts';
+import {
+  validateBeds,
+  validateHarvests,
+  validateSeeds,
+  validateSettings,
+  validateSnapshot,
+} from '../validation.ts';
 
 /** Bodies are three small arrays; 4 MB is roomy for a decade of harvests. */
 const BODY_LIMIT = '4mb';
@@ -107,6 +119,8 @@ export interface ApiRouterOptions {
   onGardenChanged?: () => void;
   /** Answers `GET /api/home-assistant`. Absent means "there is no Home Assistant". */
   homeAssistant?: () => HomeAssistantBody;
+  /** Answers `GET /api/home-assistant/status`. Absent for the same reason. */
+  integrationStatus?: () => IntegrationStatusBody;
 }
 
 function mountCollection<T>(
@@ -261,6 +275,89 @@ export function createApiRouter(db: Database, options: ApiRouterOptions = {}): R
     res.json(
       options.homeAssistant?.() ?? { available: false, reason: 'not_configured', frost: null },
     );
+  });
+
+  /**
+   * The plumbing behind the Settings page's status block.
+   *
+   * Read only, always `200`, and — like `/api/home-assistant` — deliberately not
+   * a proxy: it reports what this server knows about its own integration, never
+   * anything fetched from Supervisor during the request.
+   *
+   * It exists because "no frost banner" is the correct display both for a
+   * healthy September and for an integration that has been quietly broken since
+   * the last Home Assistant restart. Without somewhere to look, those are the
+   * same blank screen.
+   */
+  router.get('/home-assistant/status', (_req, res) => {
+    res.json(
+      options.integrationStatus?.() ??
+        ({
+          configured: false,
+          connected: false,
+          reason: 'not_configured',
+          weatherEntity: null,
+          notifyService: null,
+          sensors: [],
+          // Reported even with no Home Assistant, because it is a property of
+          // this process rather than of the integration — and it is the value
+          // that explains a notification arriving at the wrong hour.
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          frostRisk: null,
+          forecastObservedAt: null,
+        } satisfies IntegrationStatusBody),
+    );
+  });
+
+  /**
+   * Her notification preferences.
+   *
+   * A **singleton**, not a collection: one object in, one object out, no array
+   * anywhere. `GET` answers from the database, and `PUT` replaces all three
+   * fields and answers with what was actually stored.
+   *
+   * ## Why there is no `If-Match` here
+   *
+   * Every collection write on this router refuses to proceed without a declared
+   * version, and that is not inconsistency being tolerated — it is a different
+   * hazard. `PUT /api/seeds` replaces a whole array, so a stale tab saving over
+   * a newer one **destroys records**: the phone's two new harvests are simply
+   * gone, with no error and no trace. That is worth a 409 and a reconcile.
+   *
+   * Settings is three independent scalars. The worst a lost update can do here
+   * is revert a toggle she flipped on another tab a moment ago — visible on the
+   * screen she is looking at, and one click to redo. Nothing is destroyed,
+   * because there is nothing here to destroy.
+   *
+   * Adopting the machinery anyway would mean bending it out of shape. The
+   * conflict contract is array-shaped: `VersionConflictBody` carries
+   * `current: T[]` and a `collection: CollectionName`, and `collection_versions`
+   * is keyed by that same union. Settings is neither, so it would take either
+   * wrapping the object in a one-element array — a lie the client would have to
+   * unwrap — or a second, parallel conflict body, which is a third pattern
+   * nobody asked for. Both cost more than the problem.
+   *
+   * So: last write wins, deliberately. The response body is read back from the
+   * database rather than echoed from the request, so what she gets back is
+   * always what is actually stored.
+   */
+  router.get('/settings', (_req, res) => {
+    res.json(readSettings(db));
+  });
+
+  router.put('/settings', requireJsonBody, (req, res) => {
+    const result = validateSettings(req.body);
+
+    if (!result.ok) {
+      sendValidationError(res, result.issues);
+      return;
+    }
+
+    // No `onGardenChanged` here: settings do not change a single number Home
+    // Assistant publishes. Nor is there anything to tell the integration —
+    // it re-reads these from the database on every poll, so a change is live
+    // without a restart and without a notification from this handler.
+    res.json(withTransaction(db, () => writeSettings(db, result.value)));
   });
 
   /**

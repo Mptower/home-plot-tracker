@@ -6,6 +6,7 @@ import { baseHref, loadConfig } from './config.ts';
 import { createApp } from './app.ts';
 import { journalMode, openDatabase } from './db/open.ts';
 import { runMigrations } from './db/migrate.ts';
+import { readLegacyNotificationSettings } from './ha/options.ts';
 import { HomeAssistantService } from './ha/service.ts';
 
 function main(): void {
@@ -14,7 +15,14 @@ function main(): void {
 
   // Migrations run on every boot. They are idempotent, so an already-current
   // database costs one indexed read and nothing else.
-  const report = runMigrations(db);
+  //
+  // The seed is only ever used the first time the settings row is created. On
+  // an upgrade from 0.2.0 that means her existing add-on options — read here
+  // rather than inside the migration, so `db/` stays independent of `ha/` and
+  // the migration is deterministic given its input.
+  const report = runMigrations(db, undefined, {
+    settingsSeed: readLegacyNotificationSettings(config.homeAssistant.optionsPath),
+  });
 
   console.log(`Database: ${config.databasePath} (journal_mode=${journalMode(db)})`);
   console.log(
@@ -39,6 +47,7 @@ function main(): void {
       ? {
           onGardenChanged: () => homeAssistant.onGardenChanged(),
           homeAssistant: () => homeAssistant.snapshot(),
+          integrationStatus: () => homeAssistant.status(),
         }
       : undefined,
   });

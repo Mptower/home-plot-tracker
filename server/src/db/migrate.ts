@@ -3,8 +3,8 @@
  * an already-current database — it applies whatever is missing and nothing else.
  */
 import type { Database } from './open.ts';
-import { MIGRATIONS } from './migrations.ts';
-import type { Migration } from './migrations.ts';
+import { DEFAULT_MIGRATION_CONTEXT, MIGRATIONS } from './migrations.ts';
+import type { Migration, MigrationContext } from './migrations.ts';
 
 export interface MigrationReport {
   /** Versions applied by this call, in order. Empty when already up to date. */
@@ -47,9 +47,18 @@ export function appliedVersions(db: Database): number[] {
   return rows.map((row) => Number(row.version));
 }
 
+/**
+ * Applies whatever is missing, in order, each in its own transaction.
+ *
+ * `context` carries the handful of values a migration cannot get from the
+ * database — today just the settings seed. It defaults to a fresh garden's
+ * values, which is what the tests and any non-add-on deployment want; the
+ * add-on's real options are supplied by `index.ts`.
+ */
 export function runMigrations(
   db: Database,
   migrations: readonly Migration[] = MIGRATIONS,
+  context: MigrationContext = DEFAULT_MIGRATION_CONTEXT,
 ): MigrationReport {
   assertUniqueVersions(migrations);
 
@@ -68,7 +77,7 @@ export function runMigrations(
     db.exec('BEGIN IMMEDIATE');
 
     try {
-      migration.up(db);
+      migration.up(db, context);
       db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)').run(
         migration.version,
         migration.name,

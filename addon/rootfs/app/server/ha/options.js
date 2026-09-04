@@ -21,9 +21,16 @@
  * Every option is optional and every blank one falls back, so an add-on
  * upgraded from a version that had no options at all starts with sensible
  * values and nothing to fill in.
+ *
+ * What is here is **entity plumbing only** — which weather entity, which notify
+ * service, which sensor prefix. Matt sets those once. The three settings a
+ * gardener actually changes (frost notifications and quiet hours) moved into
+ * the app's own database in 0.3.0; the only thing left of them here is
+ * `readLegacyNotificationSettings`, which exists to carry the old values across
+ * that upgrade exactly once.
  */
 import fs from 'node:fs';
-import { parseTimeOfDay } from "../config.js";
+import { DEFAULT_SETTINGS } from "../db/settings.js";
 /** `weather.forecast_home`, `notify.mobile_app_julie_s_phone`. */
 const ENTITY_ID = /^[a-z_]+\.[a-z0-9_]+$/;
 const SENSOR_PREFIX = /^[a-z][a-z0-9_]*$/;
@@ -88,14 +95,46 @@ function optionalBoolean(options, key) {
     const value = options[key];
     return typeof value === 'boolean' ? value : undefined;
 }
-function timeOption(raw, fallback, label, warn) {
-    try {
-        return parseTimeOfDay(label, raw ?? fallback);
-    }
-    catch {
-        warn(`Ignoring the ${label} option ${JSON.stringify(raw)}: expected HH:MM. Using ${fallback}.`);
-        return parseTimeOfDay(label, fallback);
-    }
+/** `HH:MM`, 24-hour. The only shape a quiet-hours bound is accepted in. */
+const TIME_OF_DAY = /^([01]\d|2[0-3]):([0-5]\d)$/;
+/**
+ * The three preferences as they were last set in the add-on's Configuration tab.
+ *
+ * **This is an upgrade path, not a source of truth.** `frost_notifications`,
+ * `quiet_hours_start` and `quiet_hours_end` moved into the app's own database in
+ * 0.3.0 and are no longer declared in `addon/config.yaml`. Nothing reads them at
+ * runtime any more; they are read exactly once, by migration 4, so that an
+ * upgrade carries her existing answers across instead of resetting her to the
+ * defaults — notifications off and 21:00–07:00 stay off and 21:00–07:00.
+ *
+ * Supervisor leaves values for removed options in `/data/options.json`, so this
+ * still finds them after the option is gone from the schema. Once every install
+ * that could have been on 0.2.0 has migrated, this function and its caller can
+ * go; until then, deleting it would silently switch her notifications back on.
+ *
+ * Anything malformed falls back rather than throwing. A migration that refuses
+ * to run because a hand-edited options file has `quiet_hours_start: "9pm"`
+ * would take the whole garden down with it.
+ */
+export function readLegacyNotificationSettings(optionsPath, warn = console.warn) {
+    const options = readAddonOptions(optionsPath, warn);
+    const start = optionalString(options, 'quiet_hours_start');
+    const end = optionalString(options, 'quiet_hours_end');
+    const time = (raw, fallback, label) => {
+        if (raw === undefined)
+            return fallback;
+        if (!TIME_OF_DAY.test(raw)) {
+            warn(`Ignoring the add-on's ${label} option ${JSON.stringify(raw)}: expected HH:MM. ` +
+                `Seeding the settings with ${fallback}.`);
+            return fallback;
+        }
+        return raw;
+    };
+    return {
+        frostNotifications: optionalBoolean(options, 'frost_notifications') ?? DEFAULT_SETTINGS.frostNotifications,
+        quietHoursStart: time(start, DEFAULT_SETTINGS.quietHoursStart, 'quiet_hours_start'),
+        quietHoursEnd: time(end, DEFAULT_SETTINGS.quietHoursEnd, 'quiet_hours_end'),
+    };
 }
 /**
  * Layers `options.json` over the environment.
@@ -115,9 +154,6 @@ export function resolveHomeAssistantOptions(env, warn = console.warn) {
         weatherEntity: validated(optionalString(options, 'weather_entity') ?? env.weatherEntity, ENTITY_ID, env.weatherEntity, 'weather entity', warn),
         notifyService: validated(optionalString(options, 'notify_service') ?? env.notifyService, ENTITY_ID, env.notifyService, 'notify service', warn),
         sensorPrefix: validated(optionalString(options, 'sensor_prefix') ?? env.sensorPrefix, SENSOR_PREFIX, env.sensorPrefix, 'sensor prefix', warn),
-        frostNotifications: optionalBoolean(options, 'frost_notifications') ?? env.frostNotifications,
-        quietHoursStartMinutes: timeOption(optionalString(options, 'quiet_hours_start') ?? env.quietHoursStart, env.quietHoursStart, 'quiet_hours_start', warn),
-        quietHoursEndMinutes: timeOption(optionalString(options, 'quiet_hours_end') ?? env.quietHoursEnd, env.quietHoursEnd, 'quiet_hours_end', warn),
     };
 }
 //# sourceMappingURL=options.js.map

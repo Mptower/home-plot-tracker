@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.3.0
+
+Frost settings move into the app.
+
+- **A Settings page in the Garden panel.** Frost notifications and quiet hours
+  are now changed from inside the app, alongside the beds and the harvest log,
+  instead of from the add-on's Configuration tab.
+- **Changes apply immediately.** Turning notifications on or off, or moving
+  quiet hours, is honoured within a few minutes. There is no longer anything
+  to restart.
+- **Your current settings carry over.** Whatever you last saved in the
+  Configuration tab is what the Settings page opens with — this update does
+  not reset anything.
+- **The page explains itself.** It says in plain words that a frost less than
+  twelve hours away is announced even during quiet hours, and that setting
+  both times to the same value switches quiet hours off. Neither was ever
+  written down anywhere you would look.
+- **A status panel** shows whether Home Assistant is answering, which weather
+  entity is being watched, which sensors are published and which time zone
+  quiet hours are read against. It is there for when no frost warning appears
+  and you want to know whether that means "nothing is coming" or "something is
+  broken".
+- The Configuration tab now holds only the entity plumbing — weather entity,
+  notify service, sensor prefix — which is set once and rarely touched. Frost
+  notifications and quiet hours are no longer there, deliberately: two
+  settings pages that disagree is worse than one that is slightly further
+  away.
+
 ## 0.2.0
 
 Connects the garden to the rest of Home Assistant.

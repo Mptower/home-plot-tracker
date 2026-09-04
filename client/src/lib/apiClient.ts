@@ -35,7 +35,8 @@
  * way degrades to a slower path instead of a broken one.
  */
 import { apiUrl } from './api';
-import type { CollectionName, GardenSnapshot } from '../types';
+import { readSettingsBody } from './settings';
+import type { CollectionName, GardenSettings, GardenSnapshot, IntegrationStatusBody } from '../types';
 
 /** A hung connection is indistinguishable from a dead one; stop waiting. */
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -441,4 +442,78 @@ export async function importGarden(snapshot: GardenSnapshot): Promise<ImportOutc
     },
     versions: readVersions(isRecord(body) ? body.versions : null),
   };
+}
+
+/**
+ * Her notification preferences.
+ *
+ * A singleton rather than a collection, and the one endpoint here that carries
+ * no version. There is nothing to lose to a stale write — the fields are three
+ * independent scalars, all of them visible on screen — so the server accepts a
+ * bare `PUT` and the last write wins. Sending an `If-Match` would be sending a
+ * precondition nothing checks.
+ */
+export async function fetchSettings(): Promise<GardenSettings> {
+  const { response, body } = await send('settings');
+
+  if (!response.ok) {
+    throw failureFor(response, body, 'The garden server could not send your settings.');
+  }
+
+  const settings = readSettingsBody(body);
+
+  if (!settings) {
+    throw new ApiError('The garden server sent something unexpected for settings.', {
+      kind: 'malformed',
+      status: response.status,
+    });
+  }
+
+  return settings;
+}
+
+/** Saves all three preferences and returns what the server actually stored. */
+export async function saveSettings(settings: GardenSettings): Promise<GardenSettings> {
+  const { response, body } = await send('settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+
+  if (!response.ok) {
+    throw failureFor(response, body, 'The garden server would not save your settings.');
+  }
+
+  const stored = readSettingsBody(body);
+
+  if (!stored) {
+    throw new ApiError('The garden server sent something unexpected for settings.', {
+      kind: 'malformed',
+      status: response.status,
+    });
+  }
+
+  return stored;
+}
+
+/**
+ * The read-only integration status behind the Settings page.
+ *
+ * Resolves to `null` for every reason there might not be an answer, in the same
+ * spirit as `fetchFrostWatch`: a server too old to have this endpoint, no Home
+ * Assistant, a dropped connection. The panel says "checking" rather than
+ * showing an error, because a garden app with no Home Assistant is not in an
+ * error state.
+ */
+export async function fetchIntegrationStatus(): Promise<IntegrationStatusBody | null> {
+  try {
+    const { response, body } = await send('home-assistant/status');
+
+    if (!response.ok || !isRecord(body)) return null;
+    if (typeof body.configured !== 'boolean' || typeof body.connected !== 'boolean') return null;
+
+    return body as unknown as IntegrationStatusBody;
+  } catch {
+    return null;
+  }
 }

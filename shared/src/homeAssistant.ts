@@ -118,3 +118,48 @@ export type HomeAssistantBody =
   | { available: false; reason: HomeAssistantUnavailableReason; frost: null }
   /** `frost` is `null` when there is simply no cold in the window. */
   | { available: true; reason: null; frost: FrostWatch | null };
+
+/**
+ * The read-only diagnostics behind the Settings page's status block.
+ *
+ * It exists to answer one question that is otherwise unanswerable from the
+ * garden: when no frost warning appears, is this **broken** or is it simply
+ * **not frosty**? Those look identical — both are a blank screen — and without
+ * somewhere to look, the honest answer to "should I trust this tonight?" is no.
+ *
+ * So it reports the plumbing rather than the weather: whether Home Assistant is
+ * answering at all, which entity the forecast is being read from, which sensor
+ * ids are being published, and which timezone the server resolved. A frost risk
+ * of `none` alongside a forecast read four minutes ago is a working integration
+ * saying there is nothing to warn about — which in a Chicago September, with the
+ * lowest forecast low at 71°F, is exactly right.
+ *
+ * Like `HomeAssistantBody`, absence is data: on a laptop this answers `200` with
+ * `configured: false` rather than failing.
+ */
+export interface IntegrationStatusBody {
+  /** `false` without a `SUPERVISOR_TOKEN` — the laptop and test case. */
+  configured: boolean;
+  /** Talking to Home Assistant successfully as of the last attempt. */
+  connected: boolean;
+  /** Why there is nothing to show, when there is nothing to show. */
+  reason: HomeAssistantUnavailableReason | null;
+  /** The entity the forecast is read from, or `null` when not configured. */
+  weatherEntity: string | null;
+  /** Where a frost warning would be sent. */
+  notifyService: string | null;
+  /** Fully-qualified ids of the published sensors, e.g. `sensor.garden_frost_risk`. */
+  sensors: string[];
+  /**
+   * The IANA zone the server resolved, e.g. `America/Chicago`.
+   *
+   * Quiet hours are her wall clock, so this is the one value that explains a
+   * notification arriving at the wrong hour. See the note at the top of
+   * `server/src/ha/notifier.ts`.
+   */
+  timeZone: string;
+  /** What `sensor.<prefix>_frost_risk` currently reads. `null` before a forecast. */
+  frostRisk: FrostSeverity | null;
+  /** ISO-8601 instant the forecast behind that was fetched. `null` before the first poll. */
+  forecastObservedAt: string | null;
+}

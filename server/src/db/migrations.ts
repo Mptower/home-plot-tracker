@@ -11,13 +11,39 @@
  * 3. Nothing about the runner needs to change to add a table: a `plantings` table
  *    if beds ever grow history would just be the next version, exactly as
  *    `ha_state` is version 3.
+ *
+ * One migration needs more than a database handle. Version 4 moves three
+ * preferences out of the add-on's options and into the app, and has to carry
+ * her existing values across rather than resetting her to defaults — so `up`
+ * receives a `MigrationContext` holding the values to seed with. The context is
+ * resolved by the caller (`index.ts` reads the add-on's `options.json`), which
+ * keeps `db/` from importing `ha/` and keeps each migration deterministic given
+ * its input.
  */
+import type { GardenSettings } from '@hpt/shared';
 import type { Database } from './open.ts';
+import { DEFAULT_SETTINGS, seedSettings } from './settings.ts';
+
+/**
+ * Everything a migration needs that is not in the database.
+ *
+ * Kept deliberately small. A migration that needs the world is a migration that
+ * cannot be reasoned about, and this exists for exactly one upgrade.
+ */
+export interface MigrationContext {
+  /** Values for the settings row the first time it is created. */
+  settingsSeed: GardenSettings;
+}
+
+/** What a migration run assumes when the caller says nothing — a fresh garden. */
+export const DEFAULT_MIGRATION_CONTEXT: MigrationContext = {
+  settingsSeed: DEFAULT_SETTINGS,
+};
 
 export interface Migration {
   version: number;
   name: string;
-  up: (db: Database) => void;
+  up: (db: Database, context: MigrationContext) => void;
 }
 
 export const MIGRATIONS: readonly Migration[] = [
@@ -128,6 +154,43 @@ export const MIGRATIONS: readonly Migration[] = [
           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
       `);
+    },
+  },
+  {
+    version: 4,
+    name: 'settings',
+    up(db, context) {
+      // Frost notifications and quiet hours move here from the add-on's
+      // options. They are the only three settings a gardener has any reason to
+      // change, and reaching them meant Settings -> Add-ons -> Configuration —
+      // an admin area, behind two clicks she has no reason to know about, that
+      // restarts the container to apply an answer to "should this wake me?".
+      //
+      // This is a move and not a copy. `addon/config.yaml` no longer carries
+      // these keys at all, because two settings pages that disagree — one of
+      // them silently winning — is a worse outcome than either place alone.
+      //
+      // Columns rather than the key/value shape `ha_state` uses: this set is
+      // fixed, typed and user-facing, so a column each is what makes a typo a
+      // migration error instead of a silently ignored row. `CHECK (id = 1)`
+      // makes "singleton" a property of the schema rather than a convention
+      // every reader has to remember.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS settings (
+          id                  INTEGER PRIMARY KEY CHECK (id = 1),
+          frost_notifications INTEGER NOT NULL,
+          quiet_hours_start   TEXT    NOT NULL,
+          quiet_hours_end     TEXT    NOT NULL,
+          updated_at          TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+
+      // Seeded from whatever the add-on's options currently say, so an upgrade
+      // is invisible: notifications off and 21:00-07:00 stay off and 21:00-07:00.
+      // Resetting her to the defaults here would turn a settings page she did
+      // not ask for into her phone going off at 3am, which is the one outcome
+      // this whole feature exists to give her control over.
+      seedSettings(db, context.settingsSeed);
     },
   },
 ];
