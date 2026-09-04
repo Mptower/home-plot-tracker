@@ -22,7 +22,7 @@ export interface AddBedFormProps {
 }
 
 const FIELD_CLASSES =
-  'w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:border-emerald-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500';
+  'w-full rounded-xl border border-panel-edge bg-panel px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:border-emerald-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500';
 
 const LABEL_CLASSES = 'block text-xs font-semibold uppercase tracking-wide text-stone-500';
 
@@ -53,7 +53,7 @@ export function AddBedForm({ onCreate, onCancel }: AddBedFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm"
+      className="rounded-2xl border border-panel-edge bg-panel p-5 shadow-sm"
       aria-label="Add a garden bed"
     >
       <div className="flex items-start justify-between gap-3">
@@ -62,7 +62,7 @@ export function AddBedForm({ onCreate, onCancel }: AddBedFormProps) {
           type="button"
           onClick={onCancel}
           aria-label="Cancel adding a bed"
-          className="rounded-lg p-1.5 text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+          className="rounded-lg p-1.5 text-stone-500 transition-colors hover:bg-panel-sunken hover:text-stone-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
         >
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
@@ -151,7 +151,7 @@ export function AddBedForm({ onCreate, onCancel }: AddBedFormProps) {
       <div className="mt-5 flex flex-wrap gap-2">
         <button
           type="submit"
-          className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-emerald-600/30 transition-colors hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+          className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-emerald-600/30 transition-colors hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
           Add bed
@@ -159,7 +159,7 @@ export function AddBedForm({ onCreate, onCancel }: AddBedFormProps) {
         <button
           type="button"
           onClick={onCancel}
-          className="inline-flex items-center rounded-2xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+          className="inline-flex items-center rounded-2xl border border-panel-edge bg-panel px-4 py-2.5 text-sm font-semibold text-stone-700 transition-colors hover:bg-panel-sunken focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
         >
           Cancel
         </button>

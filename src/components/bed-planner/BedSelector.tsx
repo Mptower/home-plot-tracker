@@ -47,7 +47,7 @@ export function BedSelector({ beds, selectedBedId, onSelect, onCreate }: BedSele
               id="bed-selector-mobile"
               value={selectedBedId ?? ''}
               onChange={(event) => onSelect(event.target.value)}
-              className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm font-semibold text-stone-900 focus:border-emerald-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+              className="w-full rounded-xl border border-panel-edge bg-panel px-3 py-2.5 text-sm font-semibold text-stone-900 focus:border-emerald-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
             >
               {beds.map((bed) => (
                 <option key={bed.id} value={bed.id}>
@@ -76,7 +76,7 @@ export function BedSelector({ beds, selectedBedId, onSelect, onCreate }: BedSele
                   className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-stone-50 ${
                     isActive
                       ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
-                      : 'border-stone-200 bg-white text-stone-700 hover:border-emerald-300 hover:bg-emerald-50'
+                      : 'border-panel-edge bg-panel text-stone-700 hover:border-emerald-300 hover:bg-emerald-50'
                   }`}
                 >
                   <MapIcon className="h-5 w-5 shrink-0" aria-hidden="true" />

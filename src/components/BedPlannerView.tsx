@@ -142,7 +142,7 @@ export function BedPlannerView({ beds, setBeds, seeds }: BedPlannerViewProps) {
 
       {selectedBed ? (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
+          <section className="rounded-2xl border border-panel-edge bg-panel p-5 shadow-sm sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <h3 className="truncate text-lg font-semibold text-stone-900">{selectedBed.name}</h3>
@@ -157,14 +157,14 @@ export function BedPlannerView({ beds, setBeds, seeds }: BedPlannerViewProps) {
                   <button
                     type="button"
                     onClick={handleDeleteBed}
-                    className="rounded-xl bg-rose-600 px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+                    className="rounded-xl bg-rose-600 px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
                   >
                     Delete
                   </button>
                   <button
                     type="button"
                     onClick={() => setIsConfirmingDelete(false)}
-                    className="rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+                    className="rounded-xl border border-panel-edge bg-panel px-3 py-1.5 text-sm font-semibold text-stone-700 transition-colors hover:bg-panel-sunken focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
                   >
                     Cancel
                   </button>
@@ -173,7 +173,7 @@ export function BedPlannerView({ beds, setBeds, seeds }: BedPlannerViewProps) {
                 <button
                   type="button"
                   onClick={() => setIsConfirmingDelete(true)}
-                  className="inline-flex items-center gap-2 rounded-xl border border-stone-300 bg-white px-3 py-1.5 text-sm font-semibold text-stone-600 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+                  className="inline-flex items-center gap-2 rounded-xl border border-panel-edge bg-panel px-3 py-1.5 text-sm font-semibold text-stone-600 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
                 >
                   <Trash2 className="h-4 w-4" aria-hidden="true" />
                   Delete bed
@@ -200,7 +200,7 @@ export function BedPlannerView({ beds, setBeds, seeds }: BedPlannerViewProps) {
           />
         </div>
       ) : (
-        <section className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-stone-300 bg-white p-10 text-center shadow-sm">
+        <section className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-panel-edge bg-panel p-10 text-center shadow-sm">
           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
             <Sprout className="h-6 w-6" aria-hidden="true" />
           </span>

@@ -17,7 +17,7 @@ const NAV_ITEMS: NavItem[] = [
 
 export function Sidebar({ activeView, onChange }: SidebarProps) {
   return (
-    <aside className="sticky top-0 flex h-screen w-20 shrink-0 flex-col border-r border-emerald-100/80 bg-white/90 backdrop-blur-md md:w-72">
+    <aside className="sticky top-0 flex h-screen w-20 shrink-0 flex-col border-r border-panel-edge bg-panel-rail/95 shadow-sm backdrop-blur-md md:w-72">
       <div className="flex items-center gap-3 px-4 py-6 md:px-6">
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-sm shadow-emerald-600/30">
           <Leaf className="h-6 w-6" aria-hidden="true" />
@@ -44,10 +44,10 @@ export function Sidebar({ activeView, onChange }: SidebarProps) {
               onClick={() => onChange(item.id)}
               aria-current={isActive ? 'page' : undefined}
               title={item.label}
-              className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white md:px-4 ${
+              className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel md:px-4 ${
                 isActive
                   ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
-                  : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
+                  : 'text-stone-600 hover:bg-emerald-100/70 hover:text-stone-900'
               }`}
             >
               <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
@@ -65,7 +65,7 @@ export function Sidebar({ activeView, onChange }: SidebarProps) {
         })}
       </nav>
 
-      <p className="hidden border-t border-stone-200 px-6 py-4 text-xs text-stone-400 md:block">
+      <p className="hidden border-t border-panel-edge px-6 py-4 text-xs text-stone-400 md:block">
         Saved locally on this device
       </p>
     </aside>

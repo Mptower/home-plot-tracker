@@ -124,9 +124,9 @@ export function PlantPicker({
         role="dialog"
         aria-modal="true"
         aria-labelledby="plant-picker-title"
-        className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-stone-200 bg-white shadow-xl sm:rounded-3xl"
+        className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-panel-edge bg-panel shadow-xl sm:rounded-3xl"
       >
-        <div className="flex items-start gap-3 border-b border-stone-200 px-5 py-4">
+        <div className="flex items-start gap-3 border-b border-panel-edge px-5 py-4">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
             <Sprout className="h-5 w-5" aria-hidden="true" />
           </span>
@@ -142,13 +142,13 @@ export function PlantPicker({
             type="button"
             onClick={onClose}
             aria-label="Close plant picker"
-            className="shrink-0 rounded-lg p-1.5 text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+            className="shrink-0 rounded-lg p-1.5 text-stone-500 transition-colors hover:bg-panel-sunken hover:text-stone-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 
-        <div className="space-y-3 border-b border-stone-200 px-5 py-4">
+        <div className="space-y-3 border-b border-panel-edge px-5 py-4">
           <div className="relative">
             <Search
               className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400"
@@ -161,7 +161,7 @@ export function PlantPicker({
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search varieties, brands or families"
               aria-label="Search varieties"
-              className="w-full rounded-xl border border-stone-300 bg-white py-2 pl-9 pr-3 text-sm text-stone-900 placeholder:text-stone-400 focus:border-emerald-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+              className="w-full rounded-xl border border-panel-edge bg-panel py-2 pl-9 pr-3 text-sm text-stone-900 placeholder:text-stone-400 focus:border-emerald-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
             />
           </div>
 
@@ -184,7 +184,7 @@ export function PlantPicker({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {groups.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-center text-sm text-stone-500">
+            <p className="rounded-2xl border border-dashed border-panel-edge bg-panel-sunken px-4 py-6 text-center text-sm text-stone-500">
               {seeds.length === 0
                 ? 'No varieties in the vault yet. Add a packet in the Seed Vault to plant it here.'
                 : 'No varieties match that search.'}
@@ -217,10 +217,10 @@ export function PlantPicker({
                             <button
                               type="button"
                               onClick={() => onAssign(packet.variety)}
-                              className={`flex w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${
+                              className={`flex w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel ${
                                 isCurrent
                                   ? 'border-emerald-500 bg-emerald-50'
-                                  : 'border-stone-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/60'
+                                  : 'border-panel-edge bg-panel hover:border-emerald-300 hover:bg-emerald-50/60'
                               }`}
                             >
                               <span className={`h-8 w-8 shrink-0 rounded-lg ${style.swatch}`} aria-hidden="true" />
@@ -247,12 +247,12 @@ export function PlantPicker({
           )}
         </div>
 
-        <div className="border-t border-stone-200 px-5 py-4">
+        <div className="border-t border-panel-edge px-5 py-4">
           <button
             type="button"
             onClick={() => onAssign(null)}
             disabled={currentVariety === null}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-stone-300 disabled:hover:bg-white disabled:hover:text-stone-700"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-panel-edge bg-panel px-4 py-2.5 text-sm font-semibold text-stone-700 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-panel-edge disabled:hover:bg-panel disabled:hover:text-stone-700"
           >
             <Trash2 className="h-4 w-4" aria-hidden="true" />
             Clear this square
@@ -275,10 +275,10 @@ function FilterChip({ label, isActive, onClick }: FilterChipProps) {
       type="button"
       onClick={onClick}
       aria-pressed={isActive}
-      className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${
+      className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel ${
         isActive
           ? 'bg-emerald-600 text-white'
-          : 'bg-stone-100 text-stone-600 hover:bg-stone-200 hover:text-stone-900'
+          : 'bg-panel-sunken text-stone-600 hover:bg-panel-edge hover:text-stone-900'
       }`}
     >
       {label}

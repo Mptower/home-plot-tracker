@@ -16,7 +16,7 @@ export interface ViewSummaryCardProps {
 /** Card that surfaces the headline numbers a view already knows about. */
 export function ViewSummaryCard({ icon: Icon, headline, body, stats }: ViewSummaryCardProps) {
   return (
-    <section className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
+    <section className="rounded-2xl border border-panel-edge bg-panel p-6 shadow-sm sm:p-8">
       <div className="flex items-start gap-4">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
           <Icon className="h-5 w-5" aria-hidden="true" />
@@ -29,7 +29,7 @@ export function ViewSummaryCard({ icon: Icon, headline, body, stats }: ViewSumma
 
       <dl className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
         {stats.map((stat) => (
-          <div key={stat.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+          <div key={stat.id} className="rounded-2xl border border-panel-edge bg-panel-sunken px-4 py-3">
             <dt className="text-xs font-semibold uppercase tracking-wide text-stone-500">
               {stat.label}
             </dt>

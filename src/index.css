@@ -15,9 +15,9 @@
    */
   body {
     @apply font-sans text-stone-900 antialiased;
-    background-color: #eef8f1;
+    background-color: #cbe5d6;
     background-image: url("/botanical.svg"),
-      linear-gradient(160deg, #f5faf6 0%, #eaf5ee 45%, #e2f1e8 100%);
+      linear-gradient(160deg, #d9eee3 0%, #cbe5d6 48%, #bfdecd 100%);
     background-repeat: repeat, no-repeat;
     background-size: 700px 700px, cover;
     background-attachment: fixed, fixed;
@@ -30,3 +30,5 @@
     }
   }
 }
+
+
