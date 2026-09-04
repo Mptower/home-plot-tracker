@@ -16,6 +16,12 @@ function tableNames(db: ReturnType<typeof openDatabase>): string[] {
   return rows.map((row) => row.name);
 }
 
+// Derived rather than hardcoded, so adding migration 3 does not fail four tests
+// that were never about migration 3.
+const ALL_VERSIONS = MIGRATIONS.map((migration) => migration.version);
+const LATEST_VERSION = ALL_VERSIONS.at(-1) ?? 0;
+const NEXT_VERSION = LATEST_VERSION + 1;
+
 test('migrations build the whole schema from an empty database', () => {
   const db = openDatabase(':memory:');
 
@@ -23,12 +29,18 @@ test('migrations build the whole schema from an empty database', () => {
 
   const report = runMigrations(db);
 
-  assert.deepEqual(report.applied, [1]);
+  assert.deepEqual(report.applied, ALL_VERSIONS);
   assert.deepEqual(report.skipped, []);
-  assert.equal(report.currentVersion, 1);
+  assert.equal(report.currentVersion, LATEST_VERSION);
 
   const names = tableNames(db);
-  for (const expected of ['beds', 'harvests', 'schema_migrations', 'seeds']) {
+  for (const expected of [
+    'beds',
+    'collection_versions',
+    'harvests',
+    'schema_migrations',
+    'seeds',
+  ]) {
     assert.ok(names.includes(expected), `expected a ${expected} table, got ${names.join(', ')}`);
   }
 
@@ -42,12 +54,12 @@ test('running migrations again is a no-op', () => {
   const second = runMigrations(db);
 
   assert.deepEqual(second.applied, [], 'nothing should be applied the second time');
-  assert.deepEqual(second.skipped, [1]);
-  assert.deepEqual(appliedVersions(db), [1]);
+  assert.deepEqual(second.skipped, ALL_VERSIONS);
+  assert.deepEqual(appliedVersions(db), ALL_VERSIONS);
 
   // A third run, to be sure the ledger is not being appended to.
   runMigrations(db);
-  assert.deepEqual(appliedVersions(db), [1]);
+  assert.deepEqual(appliedVersions(db), ALL_VERSIONS);
 
   db.close();
 });
@@ -76,7 +88,7 @@ test('a new migration is applied to an existing database without re-running old 
   const withSettings: Migration[] = [
     ...MIGRATIONS,
     {
-      version: 2,
+      version: NEXT_VERSION,
       name: 'add_settings',
       up(migrating) {
         migrating.exec('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)');
@@ -86,9 +98,9 @@ test('a new migration is applied to an existing database without re-running old 
 
   const report = runMigrations(db, withSettings);
 
-  assert.deepEqual(report.applied, [2]);
-  assert.deepEqual(report.skipped, [1]);
-  assert.equal(report.currentVersion, 2);
+  assert.deepEqual(report.applied, [NEXT_VERSION]);
+  assert.deepEqual(report.skipped, ALL_VERSIONS);
+  assert.equal(report.currentVersion, NEXT_VERSION);
   assert.ok(tableNames(db).includes('settings'));
 
   db.close();
@@ -170,7 +182,11 @@ test('deleting the database file and reopening recreates the schema cleanly', ()
   const second = openDatabase(databasePath);
   const report = runMigrations(second);
 
-  assert.deepEqual(report.applied, [1], 'a deleted database migrates from scratch again');
+  assert.deepEqual(
+    report.applied,
+    ALL_VERSIONS,
+    'a deleted database migrates from scratch again',
+  );
   const count = second.prepare('SELECT COUNT(*) AS total FROM seeds').get() as { total: number };
   assert.equal(Number(count.total), 0, 'and comes back empty');
 

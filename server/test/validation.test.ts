@@ -4,6 +4,7 @@ import { bed, harvest, seed, startServer } from './helpers.ts';
 
 interface ErrorBody {
   error: string;
+  message: string;
   issues?: { path: string; message: string }[];
 }
 
@@ -17,7 +18,8 @@ async function reject(
 
   const parsed = (await response.json()) as ErrorBody;
   assert.ok(Array.isArray(parsed.issues) && parsed.issues.length > 0, 'issues should be listed');
-  assert.match(parsed.error, /Nothing was saved/);
+  assert.equal(parsed.error, 'validation_failed');
+  assert.match(parsed.message, /Nothing was saved/);
 
   return parsed;
 }

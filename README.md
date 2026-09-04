@@ -97,13 +97,17 @@ Three collections, each with exactly two operations:
 | Method | Path                    | Does                                    |
 | ------ | ----------------------- | --------------------------------------- |
 | `GET`  | `/api/health`           | liveness probe for systemd / monitoring |
-| `GET`  | `/api/seeds`            | the full `SeedPacket[]`                 |
-| `PUT`  | `/api/seeds`            | replaces it                             |
-| `GET`  | `/api/beds`             | the full `GardenBed[]`                  |
-| `PUT`  | `/api/beds`             | replaces it                             |
-| `GET`  | `/api/harvests`         | the full `HarvestLog[]`                 |
-| `PUT`  | `/api/harvests`         | replaces it                             |
-| `POST` | `/api/import`           | replaces all three at once              |
+| `GET`  | `/api/seeds`            | the full `SeedPacket[]`, plus an `ETag` |
+| `PUT`  | `/api/seeds`            | replaces it; requires `If-Match`        |
+| `GET`  | `/api/beds`             | the full `GardenBed[]`, plus an `ETag`  |
+| `PUT`  | `/api/beds`             | replaces it; requires `If-Match`        |
+| `GET`  | `/api/harvests`         | the full `HarvestLog[]`, plus an `ETag` |
+| `PUT`  | `/api/harvests`         | replaces it; requires `If-Match`        |
+| `POST` | `/api/import`           | first-run migration into an empty garden |
+
+Request and response bodies for the collections are bare JSON arrays. The
+version travels in headers, not in an envelope, so the body stays exactly the
+shape the views already pass around.
 
 ### Why collection-level, and not per-item CRUD
 
@@ -134,6 +138,104 @@ back is what was actually stored.
 Array order is preserved: each row carries a `position` column and reads are
 `ORDER BY position`.
 
+### Concurrent edits
+
+Replacing a whole collection has one sharp edge, and it is the reason this app
+left `localStorage` in the first place. Two devices are in use — a phone in the
+garden and a laptop indoors:
+
+```
+09:00  laptop   GET /api/harvests   -> []
+14:00  phone    PUT /api/harvests   -> two afternoon harvests
+14:05  laptop   PUT /api/harvests   -> saves the empty list it loaded at 09:00
+```
+
+Without a check, that last write silently erases the afternoon. No error, no
+trace, and nothing to recover from. So each collection carries a version, and a
+write has to say which version it is editing.
+
+**Reading.** `GET` returns the version as an `ETag`:
+
+```
+GET /api/harvests
+200 OK
+ETag: "7"
+
+[ ... ]
+```
+
+The token is opaque — quotes included. Echo it back verbatim; don't parse it.
+
+**Writing.** `PUT` requires `If-Match`. On success you get the new version back,
+so a client can keep writing without a follow-up `GET`:
+
+```
+PUT /api/harvests
+If-Match: "7"
+
+200 OK
+ETag: "8"
+```
+
+**Losing.** If the stored version has moved on, the write is refused with `409`
+and nothing is saved. The response carries the current version *and* the current
+collection, so the client reconciles and retries in one round trip instead of
+two:
+
+```json
+{
+  "error": "version_mismatch",
+  "message": "The harvests collection changed since you loaded it, so saving would have discarded that change. Nothing was saved.",
+  "currentVersion": "\"8\"",
+  "current": [ "...the full current collection..." ],
+  "collection": "harvests",
+  "expectedVersion": "\"7\""
+}
+```
+
+`currentVersion` is byte-identical to the `ETag` header, so it can go straight
+back into `If-Match` on the retry.
+
+**Not asking.** A `PUT` with no `If-Match` is refused with `428 Precondition
+Required` and the same body shape. It is never applied. An unversioned write is
+indistinguishable from the stale-tab overwrite above, so treating it as
+"probably fine" would leave the hole open for exactly the client most likely to
+have the bug. `If-Match: *` is refused too: a collection always exists, so `*`
+would match unconditionally and protect nothing.
+
+Three details that matter:
+
+- **The check and the write share one transaction.** Reading the version in one
+  statement and writing in another would leave a window where two requests both
+  read version 7, both judge themselves current, and both write.
+- **Versions are per collection.** Editing seeds does not invalidate an
+  in-flight beds write.
+- **They live in SQLite** (`collection_versions`), so they survive a restart. An
+  in-memory counter would reset to 0 on every reboot and hand every stale tab a
+  precondition that matches.
+
+A failed write never advances the version — a version that moved without its
+data would be worse than none, because it would then reject the client's
+perfectly good retry.
+
+### Errors
+
+Every failure, from any endpoint, has the same shape: `error` is a stable
+machine-readable code and `message` is prose for a human. Branch on `error`;
+show `message`. Extra fields hang off the same object.
+
+| `error`                  | Status | When                                          |
+| ------------------------ | ------ | --------------------------------------------- |
+| `validation_failed`      | 400    | payload rejected; adds `issues`               |
+| `malformed_json`         | 400    | body was not parseable JSON                   |
+| `unsupported_media_type` | 415    | `Content-Type` was not `application/json`     |
+| `payload_too_large`      | 413    | body above the 4 MB limit                     |
+| `not_found`              | 404    | no such route                                 |
+| `precondition_required`  | 428    | `PUT` with no usable `If-Match`               |
+| `version_mismatch`       | 409    | `PUT` from a stale version                    |
+| `import_not_empty`       | 409    | `POST /api/import` into a garden with data    |
+| `internal_error`         | 500    | anything unhandled                            |
+
 ### Validation
 
 Every write is validated server-side, on the assumption that the client is
@@ -142,7 +244,8 @@ path:
 
 ```json
 {
-  "error": "The seeds payload was rejected.",
+  "error": "validation_failed",
+  "message": "The submitted data was rejected (2 problems). Nothing was saved.",
   "issues": [
     { "path": "body[0].purchaseYear", "message": "expected an integer, received string" },
     { "path": "body[1].sneaky", "message": "unknown field" }
@@ -159,6 +262,11 @@ The validator builds a fresh object out of individually validated values, so the
 parsed request object never reaches the database. Smuggling an extra key through
 is structurally impossible rather than merely checked for.
 
+Validation runs *before* the version check, so a payload that was never going to
+be accepted gets a `400` explaining why, rather than a `428` sending the client
+off to refetch and retry it. That is [RFC 9110
+§13.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-13.2.1).
+
 Validation is deliberately slightly looser than the UI in two places. `category`
 is not restricted to `SEED_CATEGORIES`, so an export made before or after a
 category list change still imports. Bed dimensions are capped at 64 rather than
@@ -168,18 +276,39 @@ top of [`server/src/validation.ts`](server/src/validation.ts).
 ### Importing existing browser data
 
 `POST /api/import` takes `{ seeds, beds, harvests }` — the exact shape of the
-three `localStorage` values — validates all three the same way, and **replaces**
-everything in a single transaction. It never merges. The response says so
-explicitly, and reports what it destroyed:
+three `localStorage` values — validates all three the same way, and stores them
+in a single transaction. It never merges.
+
+**It only runs into an empty garden.** If any collection already holds rows the
+import is refused with `409 import_not_empty` and nothing is saved. There is no
+`force` flag.
+
+That is the one guard import needs, and it is deliberately not a version check:
+first-run migration happens before the client has ever read a version, so there
+is nothing it could put in `If-Match`. Emptiness answers the same question —
+"am I about to destroy something?" — without requiring a version the client
+cannot have. And unlike a version check it cannot be satisfied by simply
+refetching, which is the point: a stale browser snapshot must not be able to
+replace a real season's records just because it asked twice.
+
+On success every version is bumped from `0` to `1`, so a tab that read the empty
+garden before the import cannot then write over it:
 
 ```json
 {
   "mode": "replace",
-  "message": "Import replaced all existing data. 3 seeds, 1 bed and 2 harvests were deleted and 12 seeds, 4 beds and 30 harvests were stored.",
-  "replaced": { "seeds": 3, "beds": 1, "harvests": 2 },
-  "imported": { "seeds": 12, "beds": 4, "harvests": 30 }
+  "message": "Imported the snapshot into an empty garden...",
+  "imported": { "seeds": 12, "beds": 4, "harvests": 30 },
+  "versions": { "seeds": "\"1\"", "beds": "\"1\"", "harvests": "\"1\"" }
 }
 ```
+
+Those versions are usable `If-Match` values immediately.
+
+If the garden is not empty — she added a bed while looking around before
+migrating her other device — the way in is a normal versioned `PUT` per
+collection: `GET` it, fold the browser records into what is there, and save.
+Nothing is destroyed and the stray bed survives. The `409` message says so.
 
 All three keys are required. Omitting one is an error rather than an implicit
 "wipe that collection", because the destructive reading of an ambiguous payload
@@ -204,6 +333,9 @@ idempotent.
 Adding one means appending to the array — never editing an applied entry, since
 the ledger records versions rather than checksums and an edit would silently
 never re-run. The rules are written at the top of that file.
+
+Two so far: `1` builds `seeds`, `beds` and `harvests`; `2` adds
+`collection_versions`, the counter behind the `ETag` on every collection.
 
 ## Configuration
 
@@ -304,9 +436,10 @@ HTTP and SQLite rather than mocks of them. Coverage:
 | ----------------------- | ---------------------------------------------------------- |
 | `migrations.test.ts`    | applying from empty, re-running as a no-op, WAL, pragmas    |
 | `config.test.ts`        | `DATA_DIR` resolution, creation on boot, `BASE_PATH` parsing |
-| `api.test.ts`           | each collection round-tripping, order, health, 404s         |
+| `api.test.ts`           | each collection round-tripping, order, health, 404s, error shape |
 | `validation.test.ts`    | every rejection rule, and the error body shape              |
-| `import.test.ts`        | replace semantics, reported counts, partial payloads        |
+| `concurrency.test.ts`   | ETags, `If-Match`, 409/428, one winner per race, restart    |
+| `import.test.ts`        | the emptiness guard, reported counts, partial payloads      |
 | `transactions.test.ts`  | a failed write leaving the previous collection intact       |
 | `static.test.ts`        | cache headers, SPA fallback, mounting under a prefix        |
 
