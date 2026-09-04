@@ -15,19 +15,21 @@ authenticates every request against the user's Home Assistant session. That is
 why the app has no login of its own, and why both halves are careful to work
 under an arbitrary URL prefix.
 
-**The server and its API are complete (phase 1), and the client reads and writes
-them rather than `localStorage` (phase 3).** A browser that still holds the old
-data is offered a one-time copy across, and never has it deleted. See
+**The server and its API are complete (phase 1), the client reads and writes
+them rather than `localStorage` (phase 3), and the Home Assistant add-on that
+ships them is here too (phase 4).** A browser that still holds the old data is
+offered a one-time copy across, and never has it deleted. See
 [Migration phases](#migration-phases).
 
 ## Repository layout
 
-An npm workspace with three packages:
+An npm workspace with three packages, plus the add-on that ships them:
 
 ```
 shared/    domain types shared by both sides   (@hpt/shared)
 client/    the Vite + React SPA                (@hpt/client)
 server/    the Express 5 + SQLite API          (@hpt/server)
+addon/     the Home Assistant add-on
 ```
 
 `shared/` is the contract. It holds `SeedPacket`, `GardenBed`, `HarvestLog`,
@@ -79,6 +81,8 @@ From the repository root:
 | ------------------- | --------------------------------------------------- |
 | `npm run dev`       | client + server in watch mode                       |
 | `npm run build`     | builds all three packages                           |
+| `npm run build:addon` | builds, then stages the result into `addon/`      |
+| `npm run check:addon` | verifies the staged copy matches the sources      |
 | `npm run typecheck` | `tsc --noEmit` across all three                     |
 | `npm run lint`      | ESLint across all three                             |
 | `npm test`          | the server test suite                               |
@@ -403,15 +407,92 @@ bar.
 
 ## Deploying
 
+### As a Home Assistant add-on
+
+This repository is also a Home Assistant **add-on repository**. In Home
+Assistant:
+
+1. **Settings → Add-ons → Add-on Store**.
+2. **⋮ → Repositories**, add `https://github.com/Mptower/home-plot-tracker`,
+   then **Close**.
+3. Install **The Home Plot Tracker** from the store section that appears.
+   Supervisor builds the image on your machine, which takes a minute or two.
+4. Turn on **Show in sidebar**, then **Start**. A **Garden** entry appears in
+   the sidebar.
+
+There is nothing to configure. See [`addon/DOCS.md`](addon/DOCS.md) for the
+user-facing documentation Home Assistant shows on the add-on's Documentation
+tab.
+
+### How the add-on is put together
+
+```
+repository.yaml            makes this repo an add-on repository
+addon/
+├── config.yaml            slug, version, ingress, sidebar panel
+├── Dockerfile             the image Supervisor builds
+├── icon.png, logo.png     store artwork
+├── DOCS.md, CHANGELOG.md  what Home Assistant renders in the add-on UI
+└── rootfs/
+    ├── run.sh             the entrypoint, LF endings, execs Node as PID 1
+    └── app/               generated — the staged build, see below
+```
+
+Supervisor builds an add-on with **the add-on directory as the Docker build
+context**, so `addon/Dockerfile` cannot reach up into `server/` or `client/`.
+Everything the image needs has to be inside `addon/` first, and it has to be
+committed, because Supervisor clones this repository and builds it as-is — there
+is no CI step in between.
+
+[`scripts/build-addon.mjs`](scripts/build-addon.mjs) does that staging:
+
+```bash
+npm run build:addon    # build all three packages, then stage into addon/rootfs/app
+npm run check:addon    # CI: is the staged copy still in sync?
+```
+
+It writes the compiled server (minus source maps), the built client, and a
+production-only `package.json`/`package-lock.json` whose single dependency is
+Express — `node:sqlite` is part of Node, and `@hpt/shared` is imported only as
+types, which the compiler erases. The image then runs `npm ci --omit=dev`, and
+nothing in it compiles.
+
+Four things about that image are load-bearing, and each of them cost a debugging
+session to find:
+
+- **No `build.yaml`.** Supervisor 2026.08 deprecated it — *"Move build
+  parameters into the Dockerfile directly"* — and `ARG BUILD_FROM` without one
+  fails with `base name ($BUILD_FROM) should not be blank`. The base image is
+  named literally instead.
+- **`FROM node:22-alpine`.** It is a multi-arch manifest list, so naming it
+  literally still builds on both `amd64` and `aarch64`; the daemon resolves the
+  right digest for the architecture it is building for. That is what buys the
+  second architecture without a per-arch base or a build argument. It also pins
+  Node ≥ 22.6, which `node:sqlite` requires.
+- **One Node process serves everything.** The Home Assistant base image's
+  busybox has no `httpd` applet, so there is no static file server to lean on —
+  which was the plan anyway.
+- **`run.sh` must keep LF line endings.** With CRLF the kernel looks for an
+  interpreter called `/bin/sh\r` and the container dies with a bare "no such
+  file or directory" that names neither the script nor the shell.
+  [`.gitattributes`](.gitattributes) forces LF, and `build:addon` refuses to
+  stage a file with a carriage return in it.
+
+The entrypoint sets `DATA_DIR=/data` — the volume Home Assistant's own backups
+snapshot, so the database is in every backup with no extra configuration — and
+leaves `BASE_PATH` at the root, because ingress strips its prefix before
+proxying. The add-on declares **no `ports:`**, so the only route in is through
+ingress, which has already authenticated the user's Home Assistant session.
+
+### Standalone
+
 ```bash
 npm ci
 npm run build
 DATA_DIR=/data NODE_ENV=production npm start
 ```
 
-One Node process serves both the API and the client — the Home Assistant base
-image's busybox has no `httpd` applet, so there is no separate static server to
-lean on, which was the plan anyway.
+One Node process serves both the API and the client.
 
 The only state on disk is `DATA_DIR`, holding the database plus its `-wal` and
 `-shm` files. On an add-on that is `/data`, which is what HA's built-in backups
@@ -421,8 +502,8 @@ shutdown on `SIGTERM`/`SIGINT` closes the database cleanly, which does exactly
 that.
 
 There is nothing to compile natively and no `node_modules` rebuild after a Node
-upgrade, which is the whole reason for `node:sqlite`. Target architecture is
-amd64.
+upgrade, which is the whole reason for `node:sqlite`. The add-on builds for
+`amd64` and `aarch64`.
 
 ## Tests
 
@@ -452,7 +533,7 @@ HTTP and SQLite rather than mocks of them. Coverage:
 | 1     | workspaces, server, API, tests                            | **done**      |
 | 2     | auth and sessions                                         | **cancelled** |
 | 3     | client reads and writes the API instead of `localStorage` | **done**      |
-| 4     | packaging as a Home Assistant add-on                      | later         |
+| 4     | packaging as a Home Assistant add-on                      | **done**      |
 
 **There is no authentication and there will not be.** The app is deployed as a
 Home Assistant add-on behind HA ingress, which authenticates every request
@@ -719,6 +800,19 @@ server/
 │       ├── migrate.ts            the runner
 │       └── collections.ts        list/replace for each collection
 └── test/                         node:test suites
+
+repository.yaml                   makes this repo an HA add-on repository
+addon/
+├── config.yaml                   add-on manifest: ingress, panel, version
+├── Dockerfile                    node:22-alpine, no build.yaml
+├── DOCS.md                       shown on the add-on's Documentation tab
+├── CHANGELOG.md                  shown on its Changelog tab
+├── icon.png, logo.png            store artwork
+└── rootfs/
+    ├── run.sh                    entrypoint (LF endings, execs Node as PID 1)
+    └── app/                      generated: staged server, client, manifest
+
+scripts/build-addon.mjs           stages the build into addon/rootfs/app
 ```
 
 ## Design language
