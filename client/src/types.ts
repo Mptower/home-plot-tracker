@@ -10,6 +10,7 @@
  */
 import type { Dispatch, SetStateAction } from 'react';
 import type { GardenBed, HarvestLog, SeedPacket, ViewId } from '@hpt/shared';
+import type { GardenStatus } from './hooks/useGardenData';
 
 export type {
   CollectionName,
@@ -42,4 +43,7 @@ export interface HarvestLogViewProps {
 export interface SidebarProps {
   activeView: ViewId;
   onChange: (view: ViewId) => void;
+  /** Live state of the connection to the garden server, shown in the footer. */
+  status: GardenStatus;
+  onRetry: () => void;
 }
