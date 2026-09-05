@@ -20,10 +20,12 @@ import type { GardenSettings, IntegrationStatusBody } from '../types';
  *
  * The server is the source of truth; this is what the form shows for the
  * fraction of a second before the real answer arrives, so that the controls are
- * never rendered blank or disabled-looking.
+ * never rendered blank or disabled-looking. It must track
+ * `DEFAULT_SETTINGS` in `server/src/db/settings.ts` — notifications off, so the
+ * toggle cannot flash "on" before the server says otherwise.
  */
 export const SETTINGS_FALLBACK: GardenSettings = {
-  frostNotifications: true,
+  frostNotifications: false,
   quietHoursStart: '21:00',
   quietHoursEnd: '07:00',
 };

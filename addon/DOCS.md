@@ -48,12 +48,31 @@ As of 0.3.0, three settings that used to be here are no longer on this page:
 | `quiet_hours_start`   | **Garden → Settings** in the sidebar             |
 | `quiet_hours_end`     | **Garden → Settings** in the sidebar             |
 
-They are stored in the app's own database, and whatever you last had set here
-was carried over when you updated — the move does not reset anything.
+They are stored in the app's own database. Open **Garden → Settings** after
+updating and check them once — see the note below about what carries over.
 
 This is a move, not a copy. These settings have exactly one home, and it is the
 app. Nothing reads them from this page any more, so re-adding them by hand does
 nothing.
+
+#### What carried over, and what did not
+
+Home Assistant rebuilds an add-on's configuration from the options the add-on
+currently declares, and drops the ones it no longer does. Because 0.3.0 stops
+declaring these three, your old values are usually gone before the app first
+starts — so the app starts them at **frost notifications off, quiet hours
+21:00–07:00**, which is the same conservative default 0.2.0 documented.
+
+In practice that means:
+
+- If you had notifications **off**, nothing changes.
+- If you had them **on**, turn them back on in **Garden → Settings**. The app
+  will not start notifying you because of an update you did not ask for; it errs
+  towards silence.
+- If your quiet hours were something other than 21:00–07:00, set them again.
+
+The add-on log records which of the two happened, on the one start where the
+settings are first created.
 
 Two reasons for the move. The first is that changing them here required a
 restart, and the app does not: a change on the Settings page is honoured by the

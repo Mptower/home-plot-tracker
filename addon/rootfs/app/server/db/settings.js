@@ -1,6 +1,26 @@
 /**
  * What a garden starts with when nothing else says otherwise.
  *
+ * Notifications default to **off**. Two reasons, and the second is the one that
+ * matters.
+ *
+ * The first is that this is what the add-on has always advertised: the 0.2.0
+ * changelog says "Off by default", even though 0.2.0 in fact shipped
+ * `frost_notifications: true`. The documented intent and the code disagreed;
+ * this resolves that in the direction the documentation promised.
+ *
+ * The second is that these defaults are not only a fresh-install value — they
+ * are also what an **upgrade** falls back to when the previous add-on options
+ * cannot be recovered, which is the normal case rather than the exotic one.
+ * Supervisor rebuilds `/data/options.json` from the *current* schema on every
+ * start, and `AppOptions.__call__` drops any stored key the schema no longer
+ * declares. Since 0.3.0 removes these three from the schema, they are gone from
+ * the file before this process ever reads it. A default of `true` would
+ * therefore turn notifications back on for someone who had deliberately turned
+ * them off — the app waking her at night with the one thing she switched off is
+ * the worst failure this feature could have. Defaulting to off makes the
+ * unrecoverable case quiet instead of loud.
+ *
  * Deliberately server-side constants rather than an export from `@hpt/shared`:
  * every server import from that package is an `import type`, erased at compile
  * time, because the add-on image ships no `shared/` at all. A runtime value
@@ -8,7 +28,7 @@
  * boot. See the note at the top of `shared/src/homeAssistant.ts`.
  */
 export const DEFAULT_SETTINGS = {
-    frostNotifications: true,
+    frostNotifications: false,
     quietHoursStart: '21:00',
     quietHoursEnd: '07:00',
 };

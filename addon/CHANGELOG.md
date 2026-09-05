@@ -10,9 +10,12 @@ Frost settings move into the app.
 - **Changes apply immediately.** Turning notifications on or off, or moving
   quiet hours, is honoured within a few minutes. There is no longer anything
   to restart.
-- **Your current settings carry over.** Whatever you last saved in the
-  Configuration tab is what the Settings page opens with — this update does
-  not reset anything.
+- **Check your settings once after updating.** Home Assistant clears an add-on's
+  configuration for options the add-on no longer declares, so these three
+  usually do not survive the update. The app starts them at **notifications
+  off, quiet hours 21:00–07:00**. If you had notifications off, nothing
+  changes. If you had them on, switch them back on — the app will not start
+  notifying you because of an update, only because you asked it to.
 - **The page explains itself.** It says in plain words that a frost less than
   twelve hours away is announced even during quiet hours, and that setting
   both times to the same value switches quiet hours off. Neither was ever

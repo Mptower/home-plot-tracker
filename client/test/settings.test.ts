@@ -32,8 +32,22 @@ import {
   toMinutes,
 } from '../src/lib/settings.ts';
 
+/**
+ * A settings object for the wording tests.
+ *
+ * Deliberately an explicit base rather than a spread of `SETTINGS_FALLBACK`.
+ * Most of these tests are about how a quiet-hours window is described, which
+ * only has anything to say while notifications are on — and a fixture built
+ * from a product default silently changes meaning the day that default flips,
+ * which is exactly how a real bug once hid here.
+ */
 function settings(overrides: Partial<GardenSettings> = {}): GardenSettings {
-  return { ...SETTINGS_FALLBACK, ...overrides };
+  return {
+    frostNotifications: true,
+    quietHoursStart: '21:00',
+    quietHoursEnd: '07:00',
+    ...overrides,
+  };
 }
 
 function status(overrides: Partial<IntegrationStatusBody> = {}): IntegrationStatusBody {
@@ -129,6 +143,16 @@ test('only a complete pair of real times is saveable', () => {
     isValidSettings(settings({ quietHoursStart: '07:00', quietHoursEnd: '07:00' })),
     true,
   );
+});
+
+test('the first paint cannot show notifications as on before the server answers', () => {
+  // The fallback is what the toggle renders for the moment before the real
+  // settings arrive. If it were `true` the switch would flash on for someone
+  // who has notifications off, which reads as "the update turned this back on".
+  // It must also track DEFAULT_SETTINGS in server/src/db/settings.ts.
+  assert.equal(SETTINGS_FALLBACK.frostNotifications, false);
+  assert.equal(SETTINGS_FALLBACK.quietHoursStart, '21:00');
+  assert.equal(SETTINGS_FALLBACK.quietHoursEnd, '07:00');
 });
 
 test('two settings are equal when all three fields are', () => {

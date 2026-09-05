@@ -46,6 +46,15 @@ export interface Migration {
   up: (db: Database, context: MigrationContext) => void;
 }
 
+/**
+ * The migration that creates the settings singleton.
+ *
+ * Named because `index.ts` logs where the seed came from, but only on the boot
+ * that actually applies this one — after that the row exists and the seed is
+ * ignored, so the line would be a lie on every subsequent start.
+ */
+export const SETTINGS_MIGRATION = 4;
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -157,7 +166,7 @@ export const MIGRATIONS: readonly Migration[] = [
     },
   },
   {
-    version: 4,
+    version: SETTINGS_MIGRATION,
     name: 'settings',
     up(db, context) {
       // Frost notifications and quiet hours move here from the add-on's

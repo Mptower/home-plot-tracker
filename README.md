@@ -389,16 +389,45 @@ never re-run. The rules are written at the top of that file.
 Four so far: `1` builds `seeds`, `beds` and `harvests`; `2` adds
 `collection_versions`, the counter behind the `ETag` on every collection; `3`
 adds `ha_state`, where the integration remembers which cold snaps it has
-already notified about; `4` adds the `settings` singleton and seeds it from the
-add-on options that used to hold those values, so an upgrade carries the
-existing frost preferences across rather than resetting them.
+already notified about; `4` adds the `settings` singleton and seeds it.
 
 Migration `4` is the only one that reads anything outside the database. It takes
-a `MigrationContext`, which `server/src/index.ts` fills from
-`readLegacyNotificationSettings()` and which defaults to `DEFAULT_SETTINGS`
-everywhere else. The seed is an `INSERT OR IGNORE`, so a database that already
-has settings is untouched, and the options file stops being consulted the moment
-the row exists.
+a `MigrationContext`, which `server/src/index.ts` fills from `readSettingsSeed()`
+and which defaults to `DEFAULT_SETTINGS` everywhere else. The seed is an
+`INSERT OR IGNORE`, so a database that already has settings is untouched, and
+the options file stops being consulted the moment the row exists.
+
+### Why the seed usually recovers nothing, and why that is fine
+
+The obvious reading of migration `4` is that it carries the old add-on options
+across. On a real Supervisor install it usually does not, and the design assumes
+it will not.
+
+Supervisor rewrites `/data/options.json` from the *current* schema on every
+start: `Addon.write_options()` calls `self.schema.validate(self.options)`, and
+the validator skips any key the schema does not declare — the comment in
+Supervisor's own source reads "Ignore unknown options / remove from list". Since
+0.3.0 removes these three from `schema:`, they are filtered out of the file
+before this process ever opens it.
+
+So the seed falls back, and **the fallback is the upgrade's normal outcome
+rather than its edge case**. That is the entire reason
+`DEFAULT_SETTINGS.frostNotifications` is `false`. With a default of `true` the
+code would only be correct if Supervisor preserved undeclared keys; with `false`
+it is correct either way, and the failure mode is silence rather than a phone
+going off at 3am about a preference an update quietly re-enabled. A safe default
+means nobody has to be certain about Supervisor's behaviour.
+
+`readSettingsSeed()` is kept because it is still correct wherever the values
+*are* present — a hand-managed `options.json`, a standalone deployment, a restore
+from an older backup — and because it is the only thing that can recover a
+**non-default** quiet-hours window. 21:00–07:00 survives only because it happens
+to equal the default; 22:30 would not, and `settings.test.ts` pins that
+limitation so it is not mistaken for correctness.
+
+It also reports which keys it recovered, and `index.ts` logs that on the single
+boot where migration `4` runs. This goes wrong once, on a machine nobody is
+watching, and that line is the only evidence anyone will have afterwards.
 
 ## Configuration
 

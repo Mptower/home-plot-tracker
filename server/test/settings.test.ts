@@ -12,12 +12,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { GardenSettings } from '@hpt/shared';
 import { openDatabase } from '../src/db/open.ts';
 import type { Database } from '../src/db/open.ts';
 import { runMigrations } from '../src/db/migrate.ts';
 import { MIGRATIONS } from '../src/db/migrations.ts';
 import { DEFAULT_SETTINGS, readSettings, seedSettings, writeSettings } from '../src/db/settings.ts';
-import { readLegacyNotificationSettings } from '../src/ha/options.ts';
+import { readLegacyNotificationSettings, readSettingsSeed } from '../src/ha/options.ts';
 import { tempDir } from './helpers.ts';
 
 /** Her live 0.2.0 configuration, verbatim. */
@@ -46,6 +47,13 @@ function removeDir(dir: string): void {
 function migrated(): Database {
   const db = openDatabase(':memory:');
   runMigrations(db);
+  return db;
+}
+
+/** A migrated database seeded as `index.ts` seeds it on a real boot. */
+function migratedWith(settingsSeed: GardenSettings): Database {
+  const db = openDatabase(':memory:');
+  runMigrations(db, MIGRATIONS, { settingsSeed });
   return db;
 }
 
@@ -231,8 +239,12 @@ test('the legacy reader finds her 0.2.0 answers in options.json', () => {
 });
 
 test('an options file with no notification keys seeds the defaults', () => {
-  // What a fresh 0.3.0 install looks like: the options schema no longer
-  // declares these three at all, so Supervisor never writes them.
+  // This is BOTH a fresh 0.3.0 install and — more importantly — what every
+  // upgrade from 0.2.0 actually looks like. Supervisor rebuilds
+  // /data/options.json from the current schema on each start
+  // (`write_options()` -> `self.schema.validate(self.options)`), and the
+  // validator drops any key the schema no longer declares. 0.3.0 removed these
+  // three, so they are gone from the file before this process reads it.
   const { optionsPath, dir } = optionsFile(
     JSON.stringify({
       weather_entity: 'weather.forecast_home',
@@ -242,6 +254,72 @@ test('an options file with no notification keys seeds the defaults', () => {
   );
 
   assert.deepEqual(readLegacyNotificationSettings(optionsPath), DEFAULT_SETTINGS);
+  assert.equal(
+    readLegacyNotificationSettings(optionsPath).frostNotifications,
+    false,
+    'asserted as a literal, not as DEFAULT_SETTINGS: this must fail loudly if the default is ever flipped back',
+  );
+
+  removeDir(dir);
+});
+
+test('the upgrade cannot switch notifications on for someone who turned them off', () => {
+  // The failure this guards against: she set frost_notifications: false in the
+  // Configuration tab, Supervisor strips the key on the way into 0.3.0, the
+  // seed finds nothing and falls back — and a default of `true` would hand her
+  // back the exact notification she had switched off, at night, from an update
+  // she did not ask for. The fallback must be the quiet one.
+  assert.equal(DEFAULT_SETTINGS.frostNotifications, false);
+
+  const { optionsPath, dir } = optionsFile(
+    JSON.stringify({ weather_entity: 'weather.forecast_home', sensor_prefix: 'garden' }),
+  );
+  const db = migratedWith(readLegacyNotificationSettings(optionsPath));
+
+  assert.equal(
+    readSettings(db).frostNotifications,
+    false,
+    'a stripped options file must not produce notifications she never asked for',
+  );
+
+  db.close();
+  removeDir(dir);
+});
+
+test('the seed reports which legacy keys it actually recovered', () => {
+  // The boot log is the only evidence anyone will have about which source was
+  // used, and it happens exactly once on a machine nobody is watching.
+  const hers = optionsFile(JSON.stringify(HERS));
+
+  assert.deepEqual(readSettingsSeed(hers.optionsPath).recovered.sort(), [
+    'frost_notifications',
+    'quiet_hours_end',
+    'quiet_hours_start',
+  ]);
+
+  const stripped = optionsFile(JSON.stringify({ weather_entity: 'weather.forecast_home' }));
+  const seed = readSettingsSeed(stripped.optionsPath);
+
+  assert.deepEqual(seed.recovered, [], 'the normal Supervisor upgrade recovers nothing');
+  assert.equal(seed.settings.frostNotifications, false, 'and that must be the quiet outcome');
+
+  removeDir(hers.dir);
+  removeDir(stripped.dir);
+});
+
+test('a quiet-hours window that is not the default cannot be recovered once stripped', () => {
+  // Honest limitation, pinned so it is not mistaken for correctness: the
+  // fallback reproduces her 21:00-07:00 only because those happen to equal the
+  // defaults. Someone who chose 22:30 loses it, and the only fix is to read the
+  // value from somewhere Supervisor has not filtered.
+  const { optionsPath, dir } = optionsFile(
+    JSON.stringify({ weather_entity: 'weather.forecast_home' }),
+  );
+
+  const seeded = readLegacyNotificationSettings(optionsPath);
+
+  assert.equal(seeded.quietHoursStart, '21:00');
+  assert.notEqual(seeded.quietHoursStart, '22:30');
 
   removeDir(dir);
 });
@@ -253,6 +331,11 @@ test('no options file at all seeds the defaults without complaint', () => {
   assert.deepEqual(
     readLegacyNotificationSettings(path.join(dir, 'nothing.json'), (m) => warnings.push(m)),
     DEFAULT_SETTINGS,
+  );
+  assert.equal(
+    readLegacyNotificationSettings(path.join(dir, 'nothing.json')).frostNotifications,
+    false,
+    'the literal that matters: no options file must never mean "start notifying"',
   );
   assert.deepEqual(warnings, [], 'the ordinary development case must be silent');
 

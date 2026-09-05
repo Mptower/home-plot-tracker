@@ -100,24 +100,38 @@ const TIME_OF_DAY = /^([01]\d|2[0-3]):([0-5]\d)$/;
 /**
  * The three preferences as they were last set in the add-on's Configuration tab.
  *
- * **This is an upgrade path, not a source of truth.** `frost_notifications`,
- * `quiet_hours_start` and `quiet_hours_end` moved into the app's own database in
- * 0.3.0 and are no longer declared in `addon/config.yaml`. Nothing reads them at
- * runtime any more; they are read exactly once, by migration 4, so that an
- * upgrade carries her existing answers across instead of resetting her to the
- * defaults — notifications off and 21:00–07:00 stay off and 21:00–07:00.
+ * **This is a best-effort upgrade path, not a source of truth**, and on a real
+ * Supervisor install it will usually find nothing. That is expected.
  *
- * Supervisor leaves values for removed options in `/data/options.json`, so this
- * still finds them after the option is gone from the schema. Once every install
- * that could have been on 0.2.0 has migrated, this function and its caller can
- * go; until then, deleting it would silently switch her notifications back on.
+ * `frost_notifications`, `quiet_hours_start` and `quiet_hours_end` moved into
+ * the app's own database in 0.3.0 and are no longer declared in
+ * `addon/config.yaml`. Supervisor rewrites `/data/options.json` on every start
+ * from the *current* schema — `write_options()` calls
+ * `self.schema.validate(self.options)`, and the validator skips any key the
+ * schema does not declare ("Ignore unknown options / remove from list"). So by
+ * the time this process starts on 0.3.0, the three keys have already been
+ * filtered out of the file, and this returns `DEFAULT_SETTINGS`.
+ *
+ * That is why `DEFAULT_SETTINGS.frostNotifications` is `false`: this fallback is
+ * the upgrade's normal outcome, not its edge case, and it must not be able to
+ * switch notifications on for someone who deliberately turned them off.
+ *
+ * It is still worth keeping. It costs one file read at boot, it is correct on
+ * any path where the values *are* still present — a hand-managed `options.json`,
+ * a standalone deployment, a restore from a backup taken before the update —
+ * and it is the only code that can recover a **non-default** quiet-hours window.
+ * A window of 22:30–06:00 cannot be reconstructed from the defaults.
  *
  * Anything malformed falls back rather than throwing. A migration that refuses
  * to run because a hand-edited options file has `quiet_hours_start: "9pm"`
  * would take the whole garden down with it.
  */
 export function readLegacyNotificationSettings(optionsPath, warn = console.warn) {
+    return readSettingsSeed(optionsPath, warn).settings;
+}
+export function readSettingsSeed(optionsPath, warn = console.warn) {
     const options = readAddonOptions(optionsPath, warn);
+    const recovered = [];
     const start = optionalString(options, 'quiet_hours_start');
     const end = optionalString(options, 'quiet_hours_end');
     const time = (raw, fallback, label) => {
@@ -128,12 +142,19 @@ export function readLegacyNotificationSettings(optionsPath, warn = console.warn)
                 `Seeding the settings with ${fallback}.`);
             return fallback;
         }
+        recovered.push(label);
         return raw;
     };
+    const notifications = optionalBoolean(options, 'frost_notifications');
+    if (notifications !== undefined)
+        recovered.push('frost_notifications');
     return {
-        frostNotifications: optionalBoolean(options, 'frost_notifications') ?? DEFAULT_SETTINGS.frostNotifications,
-        quietHoursStart: time(start, DEFAULT_SETTINGS.quietHoursStart, 'quiet_hours_start'),
-        quietHoursEnd: time(end, DEFAULT_SETTINGS.quietHoursEnd, 'quiet_hours_end'),
+        settings: {
+            frostNotifications: notifications ?? DEFAULT_SETTINGS.frostNotifications,
+            quietHoursStart: time(start, DEFAULT_SETTINGS.quietHoursStart, 'quiet_hours_start'),
+            quietHoursEnd: time(end, DEFAULT_SETTINGS.quietHoursEnd, 'quiet_hours_end'),
+        },
+        recovered,
     };
 }
 /**
