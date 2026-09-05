@@ -108,23 +108,51 @@ production build still goes through `tsc`.
 
 ## The API
 
-Three collections, each with exactly two operations:
+Three collections, each with exactly two operations, plus a settings singleton:
 
-| Method | Path                    | Does                                    |
-| ------ | ----------------------- | --------------------------------------- |
-| `GET`  | `/api/health`           | liveness probe for systemd / monitoring |
-| `GET`  | `/api/seeds`            | the full `SeedPacket[]`, plus an `ETag` |
-| `PUT`  | `/api/seeds`            | replaces it; requires `If-Match`        |
-| `GET`  | `/api/beds`             | the full `GardenBed[]`, plus an `ETag`  |
-| `PUT`  | `/api/beds`             | replaces it; requires `If-Match`        |
-| `GET`  | `/api/harvests`         | the full `HarvestLog[]`, plus an `ETag` |
-| `PUT`  | `/api/harvests`         | replaces it; requires `If-Match`        |
-| `GET`  | `/api/home-assistant`   | the frost watch, if there is one        |
-| `POST` | `/api/import`           | first-run migration into an empty garden |
+| Method | Path                          | Does                                     |
+| ------ | ----------------------------- | ---------------------------------------- |
+| `GET`  | `/api/health`                 | liveness probe for systemd / monitoring  |
+| `GET`  | `/api/seeds`                  | the full `SeedPacket[]`, plus an `ETag`  |
+| `PUT`  | `/api/seeds`                  | replaces it; requires `If-Match`         |
+| `GET`  | `/api/beds`                   | the full `GardenBed[]`, plus an `ETag`   |
+| `PUT`  | `/api/beds`                   | replaces it; requires `If-Match`         |
+| `GET`  | `/api/harvests`               | the full `HarvestLog[]`, plus an `ETag`  |
+| `PUT`  | `/api/harvests`               | replaces it; requires `If-Match`         |
+| `GET`  | `/api/settings`               | the `GardenSettings` singleton           |
+| `PUT`  | `/api/settings`               | replaces it; no precondition — see below |
+| `GET`  | `/api/home-assistant`         | the frost watch, if there is one         |
+| `GET`  | `/api/home-assistant/status`  | read-only integration diagnostics        |
+| `POST` | `/api/import`                 | first-run migration into an empty garden |
 
 Request and response bodies for the collections are bare JSON arrays. The
 version travels in headers, not in an envelope, so the body stays exactly the
 shape the views already pass around.
+
+### Why settings carries no `If-Match`
+
+`/api/settings` is three scalars edited by one person from one Settings form,
+and it deliberately opts out of the optimistic-concurrency machinery the three
+collections use. Last write wins.
+
+The reasoning is about what a conflict would mean, not about effort. The
+collection guard exists because a stale `PUT /api/harvests` sends a whole array
+and silently deletes every row added since the load — the lost work is
+unbounded and invisible. A stale `PUT /api/settings` overwrites a toggle and two
+times with a toggle and two times, from a form that shows all three of them at
+once. The worst case is that quiet hours end up as whichever tab was saved last,
+which is visible on screen and fixed by saving again.
+
+There is also a shape problem. `VersionConflictBody` is array-shaped — `current`
+is a `T[]` and `collection` is the `'seeds' | 'beds' | 'harvests'` union that
+keys `collection_versions`. Reusing it for a singleton would mean either a
+one-element array that lies about being a collection, or a second, parallel
+conflict body. Neither is better than not having the guard.
+
+`server/test/settings-api.test.ts` pins this both ways: a stale `If-Match` on
+`/api/settings` is ignored and returns 200, while the same omission on
+`/api/seeds` is still a 428. The absence is asserted, so it cannot rot into an
+oversight.
 
 ### Why collection-level, and not per-item CRUD
 
@@ -291,6 +319,12 @@ category list change still imports. Bed dimensions are capped at 64 rather than
 the UI's 12, so a bed built by hand is not rejected. Both are documented at the
 top of [`server/src/validation.ts`](server/src/validation.ts).
 
+`PUT /api/settings` is validated the same way, against an object rather than an
+array, so its paths read `body.quietHoursStart`. Times must be `HH:MM` on a
+24-hour clock and must be real times, so `24:00` and `21:60` are both refused.
+Equal start and end is explicitly *allowed*: it is how quiet hours are switched
+off, and the Settings page says so on screen.
+
 ### Importing existing browser data
 
 `POST /api/import` takes `{ seeds, beds, harvests }` — the exact shape of the
@@ -352,8 +386,48 @@ Adding one means appending to the array — never editing an applied entry, sinc
 the ledger records versions rather than checksums and an edit would silently
 never re-run. The rules are written at the top of that file.
 
-Two so far: `1` builds `seeds`, `beds` and `harvests`; `2` adds
-`collection_versions`, the counter behind the `ETag` on every collection.
+Four so far: `1` builds `seeds`, `beds` and `harvests`; `2` adds
+`collection_versions`, the counter behind the `ETag` on every collection; `3`
+adds `ha_state`, where the integration remembers which cold snaps it has
+already notified about; `4` adds the `settings` singleton and seeds it.
+
+Migration `4` is the only one that reads anything outside the database. It takes
+a `MigrationContext`, which `server/src/index.ts` fills from `readSettingsSeed()`
+and which defaults to `DEFAULT_SETTINGS` everywhere else. The seed is an
+`INSERT OR IGNORE`, so a database that already has settings is untouched, and
+the options file stops being consulted the moment the row exists.
+
+### Why the seed usually recovers nothing, and why that is fine
+
+The obvious reading of migration `4` is that it carries the old add-on options
+across. On a real Supervisor install it usually does not, and the design assumes
+it will not.
+
+Supervisor rewrites `/data/options.json` from the *current* schema on every
+start: `Addon.write_options()` calls `self.schema.validate(self.options)`, and
+the validator skips any key the schema does not declare — the comment in
+Supervisor's own source reads "Ignore unknown options / remove from list". Since
+0.3.0 removes these three from `schema:`, they are filtered out of the file
+before this process ever opens it.
+
+So the seed falls back, and **the fallback is the upgrade's normal outcome
+rather than its edge case**. That is the entire reason
+`DEFAULT_SETTINGS.frostNotifications` is `false`. With a default of `true` the
+code would only be correct if Supervisor preserved undeclared keys; with `false`
+it is correct either way, and the failure mode is silence rather than a phone
+going off at 3am about a preference an update quietly re-enabled. A safe default
+means nobody has to be certain about Supervisor's behaviour.
+
+`readSettingsSeed()` is kept because it is still correct wherever the values
+*are* present — a hand-managed `options.json`, a standalone deployment, a restore
+from an older backup — and because it is the only thing that can recover a
+**non-default** quiet-hours window. 21:00–07:00 survives only because it happens
+to equal the default; 22:30 would not, and `settings.test.ts` pins that
+limitation so it is not mistaken for correctness.
+
+It also reports which keys it recovered, and `index.ts` logs that on the single
+boot where migration `4` runs. This goes wrong once, on a machine nobody is
+watching, and that line is the only evidence anyone will have afterwards.
 
 ## Configuration
 
@@ -383,10 +457,13 @@ instead, and those options take precedence over the environment.
 | `HA_WEATHER_ENTITY`       | `weather.forecast_home`            | forecast source; must support forecasts |
 | `HA_NOTIFY_SERVICE`       | `notify.mobile_app_julie_s_phone`  | where a frost warning is sent           |
 | `HA_SENSOR_PREFIX`        | `garden`                           | prefix for the four published sensors   |
-| `HA_FROST_NOTIFICATIONS`  | `true`                             | `false` keeps the banner, stops the phone |
-| `HA_QUIET_HOURS_START`    | `21:00`                            | local time, 24-hour                     |
-| `HA_QUIET_HOURS_END`      | `07:00`                            | local time, 24-hour                     |
-| `ADDON_OPTIONS_PATH`      | `/data/options.json`               | add-on options file; the tests redirect it |
+| `ADDON_OPTIONS_PATH`      | `/data/options.json`               | add-on options file; also the one-time seed for migration `4` |
+
+Frost notifications and quiet hours are **not** on this list, and not in the
+add-on options either. They live in the database and are edited from the app's
+Settings page. There is no environment override for them on purpose: an
+override would be a second source of truth for a setting that has a UI, and the
+losing one would fail silently.
 
 `DATA_DIR` is the important one. As a Home Assistant add-on it is set to
 `/data`, the persistent volume HA's own backups snapshot — put the database
@@ -524,12 +601,29 @@ takes the real one with it.
 - A second only if the band gets *worse*. Capped at two, so a forecast wobbling
   across a boundary cannot ratchet.
 - Nothing tender planted, nothing sent — except at a hard freeze.
-- Quiet hours 21:00–07:00, **unless** the frost lands within 12 hours. A frost
-  discovered at 10pm for 4am is exactly the one worth buzzing for; she can still
-  go out and cover the beds.
+- Quiet hours, **unless** the frost lands within 12 hours. A frost discovered at
+  10pm for 4am is exactly the one worth buzzing for; she can still go out and
+  cover the beds. Setting start equal to end switches quiet hours off; the
+  Settings page says so rather than leaving it as a mysterious no-op.
 - All of it persisted in SQLite, not memory — the add-on restarts on every
   update and every Home Assistant reboot, and each of those would otherwise
   re-announce a frost she has already dealt with.
+
+Whether to notify at all, and the quiet-hours window, are read from the
+`settings` table **at the moment the decision is made**, not captured at boot.
+That is what makes the Settings page work without a restart: a save is honoured
+by the next forecast poll, and there is no window in which the running process
+believes something the database no longer says. Two tests in
+`server/test/settings-api.test.ts` change settings through the API between two
+`refreshForecast()` calls and assert the second decision follows the new value.
+
+Quiet hours are compared against the **ambient time zone** — `TZ` in the add-on,
+which Supervisor sets from Home Assistant's own location. That is deliberate and
+documented at the top of `notifier.ts`: "21:00" means her 21:00, and a UTC
+container would put quiet hours in the middle of her afternoon. Moving the
+values into the database changed where the numbers come from and nothing about
+how they are interpreted, and the Settings page shows the resolved zone so the
+comparison is never invisible.
 
 ### How it stays out of the way
 
@@ -673,6 +767,8 @@ HTTP and SQLite rather than mocks of them. Coverage:
 | `ha-notify.test.ts`     | one per snap, escalation, quiet hours, surviving a restart   |
 | `ha-absent.test.ts`     | no Home Assistant at all: no client, no timers, no sockets   |
 | `ha-degraded.test.ts`   | Home Assistant throwing, timing out, 502ing or returning HTML |
+| `settings.test.ts`      | the singleton constraint, migration `4` seeding from the old add-on options, idempotent re-runs, a corrupt or missing row degrading to defaults |
+| `settings-api.test.ts`  | `GET`/`PUT` round trips, the deliberate absence of `If-Match`, validation, the status endpoint, and settings changing behaviour with no restart |
 
 The Home Assistant tests run against a fake Supervisor
 ([`fakeHomeAssistant`](server/test/helpers.ts)) rather than a live instance,
@@ -748,7 +844,7 @@ type ViewId = 'planner' | 'vault' | 'harvest';
 adds the prop contracts for each view: `SeedVaultViewProps`,
 `BedPlannerViewProps`, `HarvestLogViewProps` and `SidebarProps`.
 
-## The three views
+## The four views
 
 ### 🗺️ Bed Planner
 
@@ -788,6 +884,39 @@ and the top varieties by weight.
 Dates are stored as ISO `yyyy-mm-dd` and parsed by splitting the parts into a
 local `Date`. `new Date('2026-09-04')` would be read as UTC midnight and render
 as the previous day in a US timezone, so that path is deliberately avoided.
+
+### ⚙️ Settings
+
+Frost notifications on or off, and the two quiet-hours times. Three controls,
+which is the whole point: this view exists so that changing them is not a trip
+to **Settings → Add-ons → Configuration**, an admin screen full of entity ids
+that also needed a restart to take effect.
+
+Two behaviours are stated on screen rather than left to be discovered:
+
+- **A frost within twelve hours notifies anyway**, quiet hours or not. Without
+  that sentence the first time it wakes her at 10pm it reads as a bug, and the
+  fix she would reach for — switching notifications off — is exactly wrong.
+- **Setting both times the same switches quiet hours off.** That is the server's
+  existing `inQuietHours` semantics; the form says so as the times change, so it
+  is a labelled control rather than a no-op that looks broken.
+
+Below the form is a **read-only status block**: whether Home Assistant is
+answering, the weather entity being watched, the current frost risk, the four
+published sensors and the resolved time zone quiet hours are compared against.
+It answers one question — when no frost warning has appeared, is that "nothing
+is coming" or "something is broken?" — which is otherwise only answerable from
+the add-on log. `sensor.garden_frost_risk` reading `none` in September in
+Chicago is the former.
+
+It is deliberately read-only. Everything on it is either a fact about the
+running process or an entity id that belongs in the add-on configuration, and
+making them editable in two places is the failure this whole change removes.
+
+Saving does not force an immediate forecast re-poll. The next scheduled poll
+picks the new values up, which avoids a save turning notifications on and
+firing one in the same second — a surprise, from a screen whose job is to stop
+surprises.
 
 ## Category colour
 
@@ -917,6 +1046,7 @@ client/
     ├── types.ts                  re-exports @hpt/shared + view prop contracts
     ├── hooks/useGardenData.ts    API-backed state, optimistic saves, merges
     ├── hooks/useFrostWatch.ts    polls the frost endpoint; null when absent
+    ├── hooks/useSettings.ts      loads and saves settings; polls status
     ├── lib/
     │   ├── api.ts                base-path-aware API URLs
     │   ├── apiClient.ts          typed fetch layer, versions and failures
@@ -927,6 +1057,7 @@ client/
     │   ├── categoryTheme.ts      shared crop-family colour palette
     │   ├── germination.ts        seed-age and viability estimates
     │   ├── frostWatch.ts         reads /api/home-assistant, null on any failure
+    │   ├── settings.ts           quiet-hours wording and validation, all pure
     │   ├── rotation.ts           layout edits + crop-rotation conflicts
     │   └── harvest.ts            day grouping, totals, local date parsing
     └── components/
@@ -940,6 +1071,7 @@ client/
         ├── BedPlannerView.tsx    + bed-planner/
         ├── SeedVaultView.tsx     + seed-vault/
         ├── HarvestLogView.tsx    + harvest-log/
+        ├── SettingsView.tsx      + settings/
         ├── ViewHeader.tsx
         └── ViewSummaryCard.tsx
 
@@ -951,7 +1083,7 @@ server/
 │   ├── validation.ts             every write is checked here
 │   ├── static.ts                 client hosting, SPA fallback, base path
 │   ├── http.ts                   small response helpers
-│   ├── routes/api.ts             the nine endpoints
+│   ├── routes/api.ts             the endpoints
 │   ├── ha/                       everything Home Assistant, all optional
 │   │   ├── service.ts            the poller, the cache, the lifecycle
 │   │   ├── client.ts             Supervisor HTTP; times out, never throws
@@ -960,12 +1092,14 @@ server/
 │   │   ├── tenderness.ts         crop family to cold tolerance
 │   │   ├── sensors.ts            the four published entities
 │   │   ├── notifier.ts           the anti-nuisance rules
-│   │   └── options.ts            add-on options, with env as the fallback
+│   │   └── options.ts            add-on options: entity plumbing, plus the
+│   │                             one-time legacy read that seeds migration 4
 │   └── db/
 │       ├── open.ts               open, pragmas, withTransaction
 │       ├── migrations.ts         the numbered list
 │       ├── migrate.ts            the runner
 │       ├── haState.ts            small persisted keys, e.g. what was notified
+│       ├── settings.ts           the settings singleton, read/write/seed
 │       └── collections.ts        list/replace for each collection
 └── test/                         node:test suites
 

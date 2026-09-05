@@ -6,17 +6,43 @@ import { baseHref, loadConfig } from "./config.js";
 import { createApp } from "./app.js";
 import { journalMode, openDatabase } from "./db/open.js";
 import { runMigrations } from "./db/migrate.js";
+import { SETTINGS_MIGRATION } from "./db/migrations.js";
+import { readSettings } from "./db/settings.js";
+import { readSettingsSeed } from "./ha/options.js";
 import { HomeAssistantService } from "./ha/service.js";
 function main() {
     const config = loadConfig();
     const db = openDatabase(config.databasePath);
     // Migrations run on every boot. They are idempotent, so an already-current
     // database costs one indexed read and nothing else.
-    const report = runMigrations(db);
+    //
+    // The seed is only ever used the first time the settings row is created. On
+    // an upgrade from 0.2.0 that means her existing add-on options — read here
+    // rather than inside the migration, so `db/` stays independent of `ha/` and
+    // the migration is deterministic given its input.
+    const seed = readSettingsSeed(config.homeAssistant.optionsPath);
+    const report = runMigrations(db, undefined, { settingsSeed: seed.settings });
     console.log(`Database: ${config.databasePath} (journal_mode=${journalMode(db)})`);
     console.log(report.applied.length > 0
         ? `Applied migrations: ${report.applied.join(', ')} (schema version ${report.currentVersion})`
         : `Schema already at version ${report.currentVersion}`);
+    // Only meaningful on the boot that actually creates the row, so it is only
+    // printed then. Supervisor rewrites /data/options.json from the current
+    // schema before this process starts and drops keys the schema no longer
+    // declares, so recovering nothing is the expected upgrade path rather than a
+    // fault — but which of the two happened is worth having in the log, because
+    // it happens once and nobody can reconstruct it afterwards.
+    if (report.applied.includes(SETTINGS_MIGRATION)) {
+        const stored = readSettings(db);
+        console.log(seed.recovered.length > 0
+            ? `Settings seeded from the add-on options (${seed.recovered.join(', ')}): ` +
+                `frost notifications ${stored.frostNotifications ? 'on' : 'off'}, ` +
+                `quiet hours ${stored.quietHoursStart}-${stored.quietHoursEnd}.`
+            : 'Settings seeded from the defaults: no frost options were present in ' +
+                `${config.homeAssistant.optionsPath}. Frost notifications ` +
+                `${stored.frostNotifications ? 'on' : 'off'}, quiet hours ` +
+                `${stored.quietHoursStart}-${stored.quietHoursEnd}. Change them in the app's Settings page.`);
+    }
     // `null` whenever there is no SUPERVISOR_TOKEN, which is every deployment
     // that is not the Home Assistant add-on — including `npm run dev`. Nothing
     // starts, nothing is polled and no request is ever made in that case.
@@ -31,6 +57,7 @@ function main() {
             ? {
                 onGardenChanged: () => homeAssistant.onGardenChanged(),
                 homeAssistant: () => homeAssistant.snapshot(),
+                integrationStatus: () => homeAssistant.status(),
             }
             : undefined,
     });

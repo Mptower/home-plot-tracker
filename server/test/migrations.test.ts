@@ -40,6 +40,7 @@ test('migrations build the whole schema from an empty database', () => {
     'harvests',
     'schema_migrations',
     'seeds',
+    'settings',
   ]) {
     assert.ok(names.includes(expected), `expected a ${expected} table, got ${names.join(', ')}`);
   }
@@ -85,23 +86,28 @@ test('a new migration is applied to an existing database without re-running old 
   const db = openDatabase(':memory:');
   runMigrations(db);
 
-  const withSettings: Migration[] = [
+  // A throwaway table nothing else uses. It must not collide with a real one —
+  // a name already created by MIGRATIONS would make this pass whether or not
+  // the extra migration ever ran.
+  const withPlantings: Migration[] = [
     ...MIGRATIONS,
     {
       version: NEXT_VERSION,
-      name: 'add_settings',
+      name: 'add_plantings',
       up(migrating) {
-        migrating.exec('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)');
+        migrating.exec('CREATE TABLE IF NOT EXISTS plantings (key TEXT PRIMARY KEY, value TEXT)');
       },
     },
   ];
 
-  const report = runMigrations(db, withSettings);
+  assert.ok(!tableNames(db).includes('plantings'), 'the throwaway table must not already exist');
+
+  const report = runMigrations(db, withPlantings);
 
   assert.deepEqual(report.applied, [NEXT_VERSION]);
   assert.deepEqual(report.skipped, ALL_VERSIONS);
   assert.equal(report.currentVersion, NEXT_VERSION);
-  assert.ok(tableNames(db).includes('settings'));
+  assert.ok(tableNames(db).includes('plantings'));
 
   db.close();
 });

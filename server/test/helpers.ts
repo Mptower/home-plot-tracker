@@ -11,7 +11,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
-import type { GardenBed, HarvestLog, HomeAssistantBody, SeedPacket } from '@hpt/shared';
+import type {
+  GardenBed,
+  GardenSettings,
+  HarvestLog,
+  HomeAssistantBody,
+  IntegrationStatusBody,
+  SeedPacket,
+} from '@hpt/shared';
 import { loadConfig } from '../src/config.ts';
 import type { ServerConfig } from '../src/config.ts';
 import { createApp } from '../src/app.ts';
@@ -275,6 +282,24 @@ export async function readHomeAssistant(
   return { status: response.status, body: (await response.json()) as HomeAssistantBody };
 }
 
+/** `GET /api/home-assistant/status`, typed. Also answers 200 unconditionally. */
+export async function readIntegrationStatus(
+  server: TestServer,
+): Promise<{ status: number; body: IntegrationStatusBody }> {
+  const response = await server.get('/api/home-assistant/status');
+
+  return { status: response.status, body: (await response.json()) as IntegrationStatusBody };
+}
+
+/** `GET /api/settings`, typed. */
+export async function readSettingsBody(
+  server: TestServer,
+): Promise<{ status: number; body: GardenSettings }> {
+  const response = await server.get('/api/settings');
+
+  return { status: response.status, body: (await response.json()) as GardenSettings };
+}
+
 export interface StartServerOptions {
   /**
    * Wire in a faked Home Assistant.
@@ -283,6 +308,14 @@ export interface StartServerOptions {
    * with no integration at all, exactly as the app does on a laptop.
    */
   ha?: FakeHomeAssistant;
+  /**
+   * Seed the settings row as migration 4 would on a real upgrade.
+   *
+   * Absent means the defaults, which is what a fresh install gets. Supplying
+   * one is how a test stands in for "she was already running 0.2.0 with
+   * notifications off".
+   */
+  settingsSeed?: GardenSettings;
 }
 
 export async function startServer(
@@ -309,7 +342,11 @@ export async function startServer(
 
   const config = loadConfig(env);
   const db = openDatabase(config.databasePath);
-  runMigrations(db);
+  runMigrations(
+    db,
+    undefined,
+    options.settingsSeed ? { settingsSeed: options.settingsSeed } : undefined,
+  );
 
   const haService = HomeAssistantService.create({
     db,
@@ -326,6 +363,7 @@ export async function startServer(
       ? {
           onGardenChanged: () => haService.onGardenChanged(),
           homeAssistant: () => haService.snapshot(),
+          integrationStatus: () => haService.status(),
         }
       : undefined,
   });

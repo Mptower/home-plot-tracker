@@ -56,6 +56,11 @@ export interface ServerConfig {
  * should be a setting she changes rather than a bug she reports — so the
  * add-on exposes all of these as options (see `ha/options.ts`, which layers
  * `/data/options.json` over what is here).
+ *
+ * Frost notifications and quiet hours are deliberately **not** here. They are
+ * hers to change, from inside the app, and they live in the `settings` table —
+ * see `db/settings.ts`. An environment fallback for them would be a second
+ * source of truth for a value the Settings page claims to own.
  */
 export interface HomeAssistantEnv {
   /** `null` when there is no Supervisor. The whole integration is then off. */
@@ -68,10 +73,6 @@ export interface HomeAssistantEnv {
   notifyService: string;
   /** Entities are published as `sensor.<prefix>_harvest_weight` and friends. */
   sensorPrefix: string;
-  frostNotifications: boolean;
-  /** `HH:MM` local. Notifications inside this window are held until it ends. */
-  quietHoursStart: string;
-  quietHoursEnd: string;
 }
 
 export const HA_DEFAULTS = {
@@ -79,9 +80,6 @@ export const HA_DEFAULTS = {
   WEATHER_ENTITY: 'weather.forecast_home',
   NOTIFY_SERVICE: 'notify.mobile_app_julie_s_phone',
   SENSOR_PREFIX: 'garden',
-  FROST_NOTIFICATIONS: 'true',
-  QUIET_HOURS_START: '21:00',
-  QUIET_HOURS_END: '07:00',
   OPTIONS_FILENAME: 'options.json',
 } as const;
 
@@ -189,12 +187,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       weatherEntity: env.HA_WEATHER_ENTITY?.trim() || HA_DEFAULTS.WEATHER_ENTITY,
       notifyService: env.HA_NOTIFY_SERVICE?.trim() || HA_DEFAULTS.NOTIFY_SERVICE,
       sensorPrefix: env.HA_SENSOR_PREFIX?.trim() || HA_DEFAULTS.SENSOR_PREFIX,
-      frostNotifications: parseBoolean(
-        'HA_FROST_NOTIFICATIONS',
-        env.HA_FROST_NOTIFICATIONS?.trim() || HA_DEFAULTS.FROST_NOTIFICATIONS,
-      ),
-      quietHoursStart: env.HA_QUIET_HOURS_START?.trim() || HA_DEFAULTS.QUIET_HOURS_START,
-      quietHoursEnd: env.HA_QUIET_HOURS_END?.trim() || HA_DEFAULTS.QUIET_HOURS_END,
     },
   };
 }

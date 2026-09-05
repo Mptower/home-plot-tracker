@@ -21,9 +21,16 @@
  * Every option is optional and every blank one falls back, so an add-on
  * upgraded from a version that had no options at all starts with sensible
  * values and nothing to fill in.
+ *
+ * What is here is **entity plumbing only** — which weather entity, which notify
+ * service, which sensor prefix. Matt sets those once. The three settings a
+ * gardener actually changes (frost notifications and quiet hours) moved into
+ * the app's own database in 0.3.0; the only thing left of them here is
+ * `readLegacyNotificationSettings`, which exists to carry the old values across
+ * that upgrade exactly once.
  */
 import fs from 'node:fs';
-import { parseTimeOfDay } from "../config.js";
+import { DEFAULT_SETTINGS } from "../db/settings.js";
 /** `weather.forecast_home`, `notify.mobile_app_julie_s_phone`. */
 const ENTITY_ID = /^[a-z_]+\.[a-z0-9_]+$/;
 const SENSOR_PREFIX = /^[a-z][a-z0-9_]*$/;
@@ -88,14 +95,67 @@ function optionalBoolean(options, key) {
     const value = options[key];
     return typeof value === 'boolean' ? value : undefined;
 }
-function timeOption(raw, fallback, label, warn) {
-    try {
-        return parseTimeOfDay(label, raw ?? fallback);
-    }
-    catch {
-        warn(`Ignoring the ${label} option ${JSON.stringify(raw)}: expected HH:MM. Using ${fallback}.`);
-        return parseTimeOfDay(label, fallback);
-    }
+/** `HH:MM`, 24-hour. The only shape a quiet-hours bound is accepted in. */
+const TIME_OF_DAY = /^([01]\d|2[0-3]):([0-5]\d)$/;
+/**
+ * The three preferences as they were last set in the add-on's Configuration tab.
+ *
+ * **This is a best-effort upgrade path, not a source of truth**, and on a real
+ * Supervisor install it will usually find nothing. That is expected.
+ *
+ * `frost_notifications`, `quiet_hours_start` and `quiet_hours_end` moved into
+ * the app's own database in 0.3.0 and are no longer declared in
+ * `addon/config.yaml`. Supervisor rewrites `/data/options.json` on every start
+ * from the *current* schema — `write_options()` calls
+ * `self.schema.validate(self.options)`, and the validator skips any key the
+ * schema does not declare ("Ignore unknown options / remove from list"). So by
+ * the time this process starts on 0.3.0, the three keys have already been
+ * filtered out of the file, and this returns `DEFAULT_SETTINGS`.
+ *
+ * That is why `DEFAULT_SETTINGS.frostNotifications` is `false`: this fallback is
+ * the upgrade's normal outcome, not its edge case, and it must not be able to
+ * switch notifications on for someone who deliberately turned them off.
+ *
+ * It is still worth keeping. It costs one file read at boot, it is correct on
+ * any path where the values *are* still present — a hand-managed `options.json`,
+ * a standalone deployment, a restore from a backup taken before the update —
+ * and it is the only code that can recover a **non-default** quiet-hours window.
+ * A window of 22:30–06:00 cannot be reconstructed from the defaults.
+ *
+ * Anything malformed falls back rather than throwing. A migration that refuses
+ * to run because a hand-edited options file has `quiet_hours_start: "9pm"`
+ * would take the whole garden down with it.
+ */
+export function readLegacyNotificationSettings(optionsPath, warn = console.warn) {
+    return readSettingsSeed(optionsPath, warn).settings;
+}
+export function readSettingsSeed(optionsPath, warn = console.warn) {
+    const options = readAddonOptions(optionsPath, warn);
+    const recovered = [];
+    const start = optionalString(options, 'quiet_hours_start');
+    const end = optionalString(options, 'quiet_hours_end');
+    const time = (raw, fallback, label) => {
+        if (raw === undefined)
+            return fallback;
+        if (!TIME_OF_DAY.test(raw)) {
+            warn(`Ignoring the add-on's ${label} option ${JSON.stringify(raw)}: expected HH:MM. ` +
+                `Seeding the settings with ${fallback}.`);
+            return fallback;
+        }
+        recovered.push(label);
+        return raw;
+    };
+    const notifications = optionalBoolean(options, 'frost_notifications');
+    if (notifications !== undefined)
+        recovered.push('frost_notifications');
+    return {
+        settings: {
+            frostNotifications: notifications ?? DEFAULT_SETTINGS.frostNotifications,
+            quietHoursStart: time(start, DEFAULT_SETTINGS.quietHoursStart, 'quiet_hours_start'),
+            quietHoursEnd: time(end, DEFAULT_SETTINGS.quietHoursEnd, 'quiet_hours_end'),
+        },
+        recovered,
+    };
 }
 /**
  * Layers `options.json` over the environment.
@@ -115,9 +175,6 @@ export function resolveHomeAssistantOptions(env, warn = console.warn) {
         weatherEntity: validated(optionalString(options, 'weather_entity') ?? env.weatherEntity, ENTITY_ID, env.weatherEntity, 'weather entity', warn),
         notifyService: validated(optionalString(options, 'notify_service') ?? env.notifyService, ENTITY_ID, env.notifyService, 'notify service', warn),
         sensorPrefix: validated(optionalString(options, 'sensor_prefix') ?? env.sensorPrefix, SENSOR_PREFIX, env.sensorPrefix, 'sensor prefix', warn),
-        frostNotifications: optionalBoolean(options, 'frost_notifications') ?? env.frostNotifications,
-        quietHoursStartMinutes: timeOption(optionalString(options, 'quiet_hours_start') ?? env.quietHoursStart, env.quietHoursStart, 'quiet_hours_start', warn),
-        quietHoursEndMinutes: timeOption(optionalString(options, 'quiet_hours_end') ?? env.quietHoursEnd, env.quietHoursEnd, 'quiet_hours_end', warn),
     };
 }
 //# sourceMappingURL=options.js.map

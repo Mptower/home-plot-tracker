@@ -16,9 +16,6 @@ export const HA_DEFAULTS = {
     WEATHER_ENTITY: 'weather.forecast_home',
     NOTIFY_SERVICE: 'notify.mobile_app_julie_s_phone',
     SENSOR_PREFIX: 'garden',
-    FROST_NOTIFICATIONS: 'true',
-    QUIET_HOURS_START: '21:00',
-    QUIET_HOURS_END: '07:00',
     OPTIONS_FILENAME: 'options.json',
 };
 export const CONFIG_DEFAULTS = {
@@ -106,9 +103,6 @@ export function loadConfig(env = process.env) {
             weatherEntity: env.HA_WEATHER_ENTITY?.trim() || HA_DEFAULTS.WEATHER_ENTITY,
             notifyService: env.HA_NOTIFY_SERVICE?.trim() || HA_DEFAULTS.NOTIFY_SERVICE,
             sensorPrefix: env.HA_SENSOR_PREFIX?.trim() || HA_DEFAULTS.SENSOR_PREFIX,
-            frostNotifications: parseBoolean('HA_FROST_NOTIFICATIONS', env.HA_FROST_NOTIFICATIONS?.trim() || HA_DEFAULTS.FROST_NOTIFICATIONS),
-            quietHoursStart: env.HA_QUIET_HOURS_START?.trim() || HA_DEFAULTS.QUIET_HOURS_START,
-            quietHoursEnd: env.HA_QUIET_HOURS_END?.trim() || HA_DEFAULTS.QUIET_HOURS_END,
         },
     };
 }

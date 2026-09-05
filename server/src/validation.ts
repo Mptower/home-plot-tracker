@@ -13,7 +13,7 @@
  * enforces only what would actually corrupt the data or the app, so tightening a
  * form later does not retroactively make stored data unreadable.
  */
-import type { GardenBed, GardenSnapshot, HarvestLog, SeedPacket } from '@hpt/shared';
+import type { GardenBed, GardenSettings, GardenSnapshot, HarvestLog, SeedPacket } from '@hpt/shared';
 
 export interface ValidationIssue {
   /** Dotted/indexed path to the offending value, e.g. `seeds[2].purchaseYear`. */
@@ -409,4 +409,64 @@ export function validateSnapshot(raw: unknown): ValidationResult<GardenSnapshot>
   };
 
   return finish(collector, snapshot);
+}
+
+const SETTINGS_FIELDS = ['frostNotifications', 'quietHoursStart', 'quietHoursEnd'] as const;
+
+/** `HH:MM`, 24-hour. The same shape `parseTimeOfDay` accepts in `config.ts`. */
+const TIME_OF_DAY_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+function readTimeOfDay(collector: Collector, path: string, value: unknown): string {
+  if (typeof value !== 'string') {
+    collector.add(path, `expected a string, received ${describe(value)}`);
+    return '';
+  }
+
+  if (!TIME_OF_DAY_PATTERN.test(value)) {
+    collector.add(
+      path,
+      `expected a 24-hour time formatted HH:MM, received ${JSON.stringify(value)}`,
+    );
+    return '';
+  }
+
+  return value;
+}
+
+function readBoolean(collector: Collector, path: string, value: unknown): boolean {
+  if (typeof value !== 'boolean') {
+    collector.add(path, `expected true or false, received ${describe(value)}`);
+    return false;
+  }
+
+  return value;
+}
+
+/**
+ * The body of `PUT /api/settings`.
+ *
+ * All three fields are required, the same way an import requires all three
+ * collections: the endpoint replaces the settings whole, so an omitted key
+ * would be indistinguishable between "leave this alone" and "I forgot it", and
+ * guessing wrong on `frostNotifications` is the difference between her phone
+ * buzzing at 3am and not.
+ *
+ * Equal quiet-hours bounds are deliberately **allowed**. That is how quiet
+ * hours are switched off — see `inQuietHours` in `ha/notifier.ts` — and it is a
+ * choice the Settings page offers in as many words, not a mistake to reject.
+ */
+export function validateSettings(raw: unknown): ValidationResult<GardenSettings> {
+  const collector = new Collector();
+
+  if (!checkShape(collector, 'body', raw, SETTINGS_FIELDS)) {
+    return { ok: false, issues: collector.issues };
+  }
+
+  const settings: GardenSettings = {
+    frostNotifications: readBoolean(collector, 'body.frostNotifications', raw.frostNotifications),
+    quietHoursStart: readTimeOfDay(collector, 'body.quietHoursStart', raw.quietHoursStart),
+    quietHoursEnd: readTimeOfDay(collector, 'body.quietHoursEnd', raw.quietHoursEnd),
+  };
+
+  return finish(collector, settings);
 }

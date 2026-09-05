@@ -5,7 +5,7 @@
 # ingress proxy, which has already authenticated the user's HA session.
 name: The Home Plot Tracker
 slug: home_plot_tracker
-version: "0.2.0"
+version: "0.3.0"
 description: Plan garden beds, catalogue seed packets and log every harvest, alongside the rest of your home.
 url: https://github.com/Mptower/home-plot-tracker
 arch:
@@ -39,29 +39,33 @@ homeassistant_api: true
 # Defaults are the entities on the installation this was built for. They are
 # options rather than constants so that renaming an entity in Home Assistant is
 # a settings change here, not a code change.
+#
+# What is left here is **entity plumbing only** — which weather entity, which
+# notify service, which sensor prefix. It is set once, by whoever installed the
+# add-on, and changing it is genuinely an administrator's job.
+#
+# Frost notifications and quiet hours are deliberately *not* here. They moved
+# into the app's own Settings page in 0.3.0, because they are the settings a
+# gardener actually changes and reaching them should not mean visiting an admin
+# screen or restarting a container. They live in the app's database and are the
+# only copy: nothing reads them from here any more, and re-adding them would
+# recreate the exact failure this avoids — two settings pages that disagree,
+# with one silently winning.
 options:
   weather_entity: weather.forecast_home
   notify_service: notify.mobile_app_julie_s_phone
   sensor_prefix: garden
-  frost_notifications: true
-  quiet_hours_start: "21:00"
-  quiet_hours_end: "07:00"
 schema:
   # A weather entity that supports forecasts. The add-on calls
   # weather.get_forecasts rather than reading state attributes, because
   # forecasts stopped being attributes in Home Assistant 2024.4.
   weather_entity: str
   # Any notify service. To stop the phone notification while keeping the in-app
-  # banner and the sensors, use frost_notifications below — blanking this falls
-  # back to the default rather than disabling anything.
+  # banner and the sensors, switch frost notifications off in the app's own
+  # Settings page — blanking this falls back to the default rather than
+  # disabling anything.
   notify_service: str
   # Prefix for the four published sensors, e.g. sensor.garden_harvest_weight.
   # Change it if those ids are already taken; the add-on will not overwrite an
   # entity it did not create.
   sensor_prefix: str
-  frost_notifications: bool
-  # 24-hour local time. No notification is sent inside this window unless the
-  # frost lands within twelve hours, which is close enough that waiting until
-  # morning would be too late to cover anything.
-  quiet_hours_start: str
-  quiet_hours_end: str

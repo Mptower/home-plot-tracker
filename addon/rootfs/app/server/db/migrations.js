@@ -1,3 +1,16 @@
+import { DEFAULT_SETTINGS, seedSettings } from "./settings.js";
+/** What a migration run assumes when the caller says nothing — a fresh garden. */
+export const DEFAULT_MIGRATION_CONTEXT = {
+    settingsSeed: DEFAULT_SETTINGS,
+};
+/**
+ * The migration that creates the settings singleton.
+ *
+ * Named because `index.ts` logs where the seed came from, but only on the boot
+ * that actually applies this one — after that the row exists and the seed is
+ * ignored, so the line would be a lie on every subsequent start.
+ */
+export const SETTINGS_MIGRATION = 4;
 export const MIGRATIONS = [
     {
         version: 1,
@@ -102,6 +115,42 @@ export const MIGRATIONS = [
           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
       `);
+        },
+    },
+    {
+        version: SETTINGS_MIGRATION,
+        name: 'settings',
+        up(db, context) {
+            // Frost notifications and quiet hours move here from the add-on's
+            // options. They are the only three settings a gardener has any reason to
+            // change, and reaching them meant Settings -> Add-ons -> Configuration —
+            // an admin area, behind two clicks she has no reason to know about, that
+            // restarts the container to apply an answer to "should this wake me?".
+            //
+            // This is a move and not a copy. `addon/config.yaml` no longer carries
+            // these keys at all, because two settings pages that disagree — one of
+            // them silently winning — is a worse outcome than either place alone.
+            //
+            // Columns rather than the key/value shape `ha_state` uses: this set is
+            // fixed, typed and user-facing, so a column each is what makes a typo a
+            // migration error instead of a silently ignored row. `CHECK (id = 1)`
+            // makes "singleton" a property of the schema rather than a convention
+            // every reader has to remember.
+            db.exec(`
+        CREATE TABLE IF NOT EXISTS settings (
+          id                  INTEGER PRIMARY KEY CHECK (id = 1),
+          frost_notifications INTEGER NOT NULL,
+          quiet_hours_start   TEXT    NOT NULL,
+          quiet_hours_end     TEXT    NOT NULL,
+          updated_at          TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+            // Seeded from whatever the add-on's options currently say, so an upgrade
+            // is invisible: notifications off and 21:00-07:00 stay off and 21:00-07:00.
+            // Resetting her to the defaults here would turn a settings page she did
+            // not ask for into her phone going off at 3am, which is the one outcome
+            // this whole feature exists to give her control over.
+            seedSettings(db, context.settingsSeed);
         },
     },
 ];

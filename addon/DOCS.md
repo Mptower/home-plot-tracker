@@ -21,18 +21,15 @@ and it is there.
 
 ## Configuration
 
-Six options, all optional, all with working defaults. They exist so that
+Three options, all optional, all with working defaults. They exist so that
 renaming something in Home Assistant is a settings change here rather than a
 code change.
 
-| Option                | Default                           | What it does                                          |
-| --------------------- | --------------------------------- | ----------------------------------------------------- |
-| `weather_entity`      | `weather.forecast_home`           | where the frost forecast is read from                 |
-| `notify_service`      | `notify.mobile_app_julie_s_phone` | where a frost warning is sent                         |
-| `sensor_prefix`       | `garden`                          | prefix for the published sensors                      |
-| `frost_notifications` | `true`                            | turn off to keep the in-app banner but silence the phone |
-| `quiet_hours_start`   | `21:00`                           | no notifications after this, local time                |
-| `quiet_hours_end`     | `07:00`                           | no notifications until this, local time                |
+| Option           | Default                           | What it does                          |
+| ---------------- | --------------------------------- | ------------------------------------- |
+| `weather_entity` | `weather.forecast_home`           | where the frost forecast is read from |
+| `notify_service` | `notify.mobile_app_julie_s_phone` | where a frost warning is sent         |
+| `sensor_prefix`  | `garden`                          | prefix for the published sensors      |
 
 `weather_entity` must be an entity that supports forecasts. Most do; if the
 frost banner never appears, that is the first thing to check.
@@ -41,8 +38,54 @@ frost banner never appears, that is the first thing to check.
 already taken. The add-on will not overwrite an entity it did not create — it
 logs a line telling you to change this instead.
 
+### Frost notifications and quiet hours moved into the app
+
+As of 0.3.0, three settings that used to be here are no longer on this page:
+
+| Was here              | Now                                             |
+| --------------------- | ----------------------------------------------- |
+| `frost_notifications` | **Garden → Settings** in the sidebar             |
+| `quiet_hours_start`   | **Garden → Settings** in the sidebar             |
+| `quiet_hours_end`     | **Garden → Settings** in the sidebar             |
+
+They are stored in the app's own database. Open **Garden → Settings** after
+updating and check them once — see the note below about what carries over.
+
+This is a move, not a copy. These settings have exactly one home, and it is the
+app. Nothing reads them from this page any more, so re-adding them by hand does
+nothing.
+
+#### What carried over, and what did not
+
+Home Assistant rebuilds an add-on's configuration from the options the add-on
+currently declares, and drops the ones it no longer does. Because 0.3.0 stops
+declaring these three, your old values are usually gone before the app first
+starts — so the app starts them at **frost notifications off, quiet hours
+21:00–07:00**, which is the same conservative default 0.2.0 documented.
+
+In practice that means:
+
+- If you had notifications **off**, nothing changes.
+- If you had them **on**, turn them back on in **Garden → Settings**. The app
+  will not start notifying you because of an update you did not ask for; it errs
+  towards silence.
+- If your quiet hours were something other than 21:00–07:00, set them again.
+
+The add-on log records which of the two happened, on the one start where the
+settings are first created.
+
+Two reasons for the move. The first is that changing them here required a
+restart, and the app does not: a change on the Settings page is honoured by the
+next forecast poll, within a few minutes. The second is that this is an
+administrator's screen with entity ids on it, and deciding whether your phone
+should buzz before a frost is not an administrator's decision.
+
+What is left here is entity plumbing — set once, at install, and rarely touched
+again.
+
 Quiet hours are a floor, not a ceiling: a frost landing within twelve hours will
 still notify, because waiting until morning would be too late to cover anything.
+The Settings page says so on screen.
 
 Everything else is set by the add-on's entrypoint and is not configurable:
 
@@ -71,6 +114,12 @@ degrees colder than the forecast on a still, clear night), **frost** at 32°, an
 
 Your phone gets at most one notification per cold snap, and a second only if the
 forecast gets worse. Nothing is sent at all if nothing tender is in the ground.
+
+Whether a notification is sent at all, and the hours it should stay quiet, are
+set in the app: **Garden → Settings**. The same page shows whether Home
+Assistant is answering, which entity is being watched and which time zone quiet
+hours are read against — which is where to look when no warning appears and you
+want to know whether that means "nothing is coming" or "something is broken".
 
 Four sensors are published for dashboards and automations:
 
@@ -125,7 +174,7 @@ start looks like this:
 ```
 [home-plot-tracker] starting on :8099, data in /data
 Database: /data/home-plot-tracker.db (journal_mode=wal)
-Applied migrations: 1 (schema version 1)
+Applied migrations: 1, 2, 3, 4 (schema version 4)
 The Home Plot Tracker API is listening on http://0.0.0.0:8099/
 Serving the client bundle from /app/client
 ```

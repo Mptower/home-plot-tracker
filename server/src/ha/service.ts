@@ -18,11 +18,20 @@
  * without a `SUPERVISOR_TOKEN`, so on a laptop there is no service, no timer
  * and no request — not a disabled one, not a failing one. That is the ordinary
  * development path and the one the tests run on, so it has to be the quiet one.
+ *
+ * **Her settings apply without a restart.** Frost notifications and quiet hours
+ * are read from the database at the moment each notification decision is made,
+ * never cached on this instance. Turning notifications off at 10:00 is honoured
+ * by the 10:07 poll; there is no stale copy to go out of date and nothing to
+ * restart. That is the practical reason those three settings left the add-on's
+ * options in the first place.
  */
-import type { GardenBed, HarvestLog, HomeAssistantBody, SeedPacket } from '@hpt/shared';
+import type { GardenBed, HarvestLog, HomeAssistantBody, IntegrationStatusBody, SeedPacket } from '@hpt/shared';
 import type { Database } from '../db/open.ts';
 import { listBeds, listHarvests, listSeeds } from '../db/collections.ts';
+import { readSettings } from '../db/settings.ts';
 import type { HomeAssistantEnv } from '../config.ts';
+import { parseTimeOfDay } from '../config.ts';
 import type { FetchLike } from './client.ts';
 import { HomeAssistantClient } from './client.ts';
 import type { HomeAssistantOptions } from './options.ts';
@@ -30,8 +39,9 @@ import { resolveHomeAssistantOptions } from './options.ts';
 import type { ForecastPoint } from './frost.ts';
 import { assessFrostRisk } from './frost.ts';
 import { readForecast } from './forecast.ts';
-import { buildSensorPayloads, findWritableSensors, publishSensors } from './sensors.ts';
+import { PUBLISHED_SENSORS, buildSensorPayloads, findWritableSensors, publishSensors } from './sensors.ts';
 import { decideNotification, recordNotification } from './notifier.ts';
+import type { NotifyOptions } from './notifier.ts';
 
 /** How often to re-read the forecast. */
 const FORECAST_INTERVAL_MS = 15 * 60 * 1000;
@@ -148,7 +158,23 @@ export class HomeAssistantService {
     this.#log(
       `Home Assistant integration enabled (weather: ${this.#options.weatherEntity}, ` +
         `sensors: sensor.${this.#options.sensorPrefix}_*, ` +
-        `notifications: ${this.#options.frostNotifications ? this.#options.notifyService : 'off'}).`,
+        `notify service: ${this.#options.notifyService}).`,
+    );
+
+    // A snapshot for the log, not a cached value. Frost notifications and quiet
+    // hours are read from the database at the moment each decision is made —
+    // see `#notifyOptions` — so changing them in the app takes effect on the
+    // next poll rather than on the next restart, which is the entire point of
+    // moving them out of the add-on's options.
+    const settings = readSettings(this.#db, this.#warn);
+
+    this.#log(
+      `Frost notifications are ${settings.frostNotifications ? 'on' : 'off'}, ` +
+        `quiet hours ${
+          settings.quietHoursStart === settings.quietHoursEnd
+            ? 'disabled'
+            : `${settings.quietHoursStart}–${settings.quietHoursEnd}`
+        }. Change these in the app's Settings page.`,
     );
 
     // Every time this integration renders — quiet hours, "Saturday night",
@@ -230,6 +256,76 @@ export class HomeAssistantService {
     return { available: true, reason: null, frost: this.#assess() };
   }
 
+  /**
+   * The plumbing, for the Settings page's status block.
+   *
+   * Distinct from `snapshot()` in what it is for: `snapshot()` answers "is a
+   * frost coming?", and this answers "is any of this working?". A blank frost
+   * banner is the correct display for both a healthy September and a broken
+   * integration, and without somewhere to look the two are indistinguishable.
+   *
+   * Same rules as `snapshot()` — synchronous, local, and never a failure.
+   */
+  status(): IntegrationStatusBody {
+    const frost = this.#forecastKnown && this.#reachable ? this.#assess() : null;
+
+    return {
+      configured: true,
+      connected: this.#reachable,
+      reason: !this.#reachable ? 'unreachable' : this.#forecastKnown ? null : 'no_forecast',
+      weatherEntity: this.#options.weatherEntity,
+      notifyService: this.#options.notifyService,
+      sensors: PUBLISHED_SENSORS.map((name) => `sensor.${this.#options.sensorPrefix}_${name}`),
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      // `none` is a real answer and a different thing from "no answer yet": it
+      // means a forecast was read and nothing planted minds the low.
+      frostRisk: this.#forecastKnown && this.#reachable ? (frost?.severity ?? 'none') : null,
+      forecastObservedAt: this.#forecast?.observedAt ?? null,
+    };
+  }
+
+  /**
+   * The notification preferences, read fresh from the database every time.
+   *
+   * Deliberately not cached on the instance. These are hers to change from the
+   * Settings page, and a copy taken at construction would mean her answer to
+   * "should this wake me?" did not apply until the add-on next restarted. Read
+   * here, at the moment the decision is made, a change is honoured by the very
+   * next poll and there is no stale window at all.
+   *
+   * The `HH:MM` strings become minutes from local midnight here, which is the
+   * form `inQuietHours` compares against the ambient wall clock. That reading
+   * of the clock is deliberate and measured — see the note at the top of
+   * `notifier.ts` — and converting a freshly-read setting rather than a cached
+   * one does not disturb it: the bounds are still wall-clock minutes, still
+   * compared against her local hour.
+   */
+  #notifyOptions(): NotifyOptions {
+    const settings = readSettings(this.#db, this.#warn);
+
+    return {
+      enabled: settings.frostNotifications,
+      quietHoursStartMinutes: this.#minutes(settings.quietHoursStart, '21:00'),
+      quietHoursEndMinutes: this.#minutes(settings.quietHoursEnd, '07:00'),
+    };
+  }
+
+  /**
+   * `HH:MM` to minutes from midnight, falling back rather than throwing.
+   *
+   * `readSettings` already rejects anything that is not `HH:MM`, so this only
+   * fires if the two ever disagree. A throw here would be on a timer, inside a
+   * poll, which is not a place to discover a validation gap.
+   */
+  #minutes(value: string, fallback: string): number {
+    try {
+      return parseTimeOfDay('quiet hours', value);
+    } catch {
+      this.#warn(`Ignoring the stored quiet-hours value ${JSON.stringify(value)}; using ${fallback}.`);
+      return parseTimeOfDay('quiet hours', fallback);
+    }
+  }
+
   #assess() {
     if (this.#forecast === null) return null;
 
@@ -300,11 +396,7 @@ export class HomeAssistantService {
 
   async #maybeNotify(): Promise<void> {
     const watch = this.#assess();
-    const decision = decideNotification(this.#db, watch, {
-      enabled: this.#options.frostNotifications,
-      quietHoursStartMinutes: this.#options.quietHoursStartMinutes,
-      quietHoursEndMinutes: this.#options.quietHoursEndMinutes,
-    });
+    const decision = decideNotification(this.#db, watch, this.#notifyOptions());
 
     if (!decision.send || watch === null) return;
 

@@ -38,7 +38,35 @@ export interface HarvestLog {
   count: number;
 }
 
-export type ViewId = 'planner' | 'vault' | 'harvest';
+export type ViewId = 'planner' | 'vault' | 'harvest' | 'settings';
+
+/**
+ * The preferences she can change from inside the app.
+ *
+ * These three used to be add-on options, editable only from
+ * **Settings → Add-ons → Configuration** — an admin area she should never have
+ * to visit to decide whether her phone buzzes at 3am. They now live in the
+ * app's own database, and the add-on's `options:` no longer carries them at
+ * all. One source of truth per setting: two settings pages that disagree, where
+ * one silently wins, is the outcome this shape exists to prevent.
+ *
+ * What did *not* move is the entity plumbing — `weather_entity`,
+ * `notify_service` and `sensor_prefix` are still add-on options, because they
+ * are set once when the add-on is installed and are not decisions a gardener
+ * makes.
+ */
+export interface GardenSettings {
+  /** Whether a frost warning reaches her phone. The banner and the sensors are unaffected. */
+  frostNotifications: boolean;
+  /**
+   * `HH:MM`, 24-hour, in her local wall-clock time.
+   *
+   * Equal start and end switches quiet hours off entirely rather than silencing
+   * the whole day — see `inQuietHours` in `server/src/ha/notifier.ts`.
+   */
+  quietHoursStart: string;
+  quietHoursEnd: string;
+}
 
 /** Canonical category list backing every category dropdown in the app. */
 export const SEED_CATEGORIES: readonly string[] = [
@@ -181,5 +209,6 @@ export type {
   FrostWatch,
   HomeAssistantBody,
   HomeAssistantUnavailableReason,
+  IntegrationStatusBody,
   Tenderness,
 } from './homeAssistant.js';
