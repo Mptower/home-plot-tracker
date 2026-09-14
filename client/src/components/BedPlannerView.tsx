@@ -106,6 +106,22 @@ export function BedPlannerView({ beds, setBeds, seeds }: BedPlannerViewProps) {
     setActiveCell(null);
   }
 
+  /**
+   * Records what grew in this bed last season.
+   *
+   * Until now this was written once, at bed creation, and never again — which
+   * is why hers is empty and why the rotation warning could never fire for her
+   * only bed. It also went quietly wrong every spring: last year's crop becomes
+   * the year before's, and nothing ever said so.
+   */
+  function handleLastYearCategoryChange(category: string) {
+    if (!selectedBed) return;
+
+    setBeds((current) =>
+      current.map((bed) => (bed.id === selectedBed.id ? { ...bed, lastYearCategory: category } : bed)),
+    );
+  }
+
   const activeVariety =
     selectedBed && activeCell ? selectedBed.layout[activeCell.row]?.[activeCell.column] ?? null : null;
 
@@ -197,6 +213,7 @@ export function BedPlannerView({ beds, setBeds, seeds }: BedPlannerViewProps) {
             tallies={tallies}
             plantedCount={countPlanted(selectedBed)}
             conflictCount={conflicts.length}
+            onLastYearCategoryChange={handleLastYearCategoryChange}
           />
         </div>
       ) : (
