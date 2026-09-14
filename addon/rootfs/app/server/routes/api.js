@@ -23,8 +23,12 @@ import { listBeds, listHarvests, listSeeds, replaceBeds, replaceHarvests, replac
 import { readSettings, writeSettings } from "../db/settings.js";
 import { bumpVersion, readAllVersions, readVersion, replaceIfCurrent } from "../db/versions.js";
 import { appliedVersions } from "../db/migrate.js";
+import { readLastExportAt, writeLastExportAt } from "../db/appState.js";
+import { listSafetyCopies, readSafetyCopy } from "../db/snapshots.js";
+import { backupFilename, buildDocument, currentCounts, prettyJson, } from "../backup/document.js";
+import { applyRestore } from "../backup/restore.js";
 import { parseIfMatch, requireJsonBody, sendError, sendImportConflict, sendValidationError, sendVersionConflict, versionToken, } from "../http.js";
-import { validateBeds, validateHarvests, validateSeeds, validateSettings, validateSnapshot, } from "../validation.js";
+import { validateBackupDocument, validateBeds, validateHarvests, validateSeeds, validateSettings, validateSnapshot, } from "../validation.js";
 /** Bodies are three small arrays; 4 MB is roomy for a decade of harvests. */
 const BODY_LIMIT = '4mb';
 /** Counters -> entity tags, so every version leaves the server in the same form. */
@@ -34,6 +38,21 @@ function tokenise(versions) {
         beds: versionToken(versions.beds),
         harvests: versionToken(versions.harvests),
     };
+}
+/**
+ * `3 seeds, 1 bed and 14 harvests`.
+ *
+ * Singular where singular is correct, because the one place this appears is the
+ * sentence confirming that her garden was just replaced, and "1 beds" in that
+ * sentence is a small signal that nobody was paying attention to the big one.
+ */
+function describeCounts(counts) {
+    const parts = [
+        `${counts.seeds} ${counts.seeds === 1 ? 'seed packet' : 'seed packets'}`,
+        `${counts.beds} ${counts.beds === 1 ? 'bed' : 'beds'}`,
+        `${counts.harvests} ${counts.harvests === 1 ? 'harvest' : 'harvests'}`,
+    ];
+    return `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
 }
 const SEEDS = {
     name: 'seeds',
@@ -310,6 +329,156 @@ export function createApiRouter(db, options = {}) {
         });
         // An import is the largest change the garden ever sees in one go.
         options.onGardenChanged?.();
+    });
+    /**
+     * The wall clock, read ambiently.
+     *
+     * Deliberate, and the only two things it timestamps are a file's `exportedAt`
+     * and a safety copy's `takenAt` — both of which are *descriptions of when
+     * something happened*, where the real clock is the correct answer and an
+     * injected one would be testing the injection. The tests bracket a request
+     * with `Date.now()` on either side and assert the timestamp falls between,
+     * which proves more than a frozen clock would.
+     */
+    const clock = () => new Date();
+    /**
+     * Her whole garden, as one file she can keep.
+     *
+     * ## Why this exists at all
+     *
+     * Supervisor deletes `/data` when an add-on is uninstalled, with no
+     * confirmation step. One mis-click in the add-on UI and every seed packet,
+     * bed layout and harvest she has recorded is gone. Home Assistant's own
+     * backups help only if somebody remembers to take one, and restoring from a
+     * full backup to recover a single add-on's SQLite file is not a thing she can
+     * do unaided. This endpoint is the thing she *can* do unaided.
+     *
+     * ## Why it is not `res.json`
+     *
+     * `res.json` writes one enormous line. A backup you cannot open and read is a
+     * backup you cannot trust, and "is my garden actually in this file?" needs to
+     * be answerable by double-clicking it. See `prettyJson` for the formatting
+     * rule and why a bed's layout stays on one line per row.
+     *
+     * ## No `If-Match`, no ETag
+     *
+     * Reading cannot lose anything, and there is no sensible single version for a
+     * document spanning three independently-versioned collections. The transaction
+     * inside `buildDocument` is what makes the file coherent.
+     */
+    router.get('/export', (_req, res) => {
+        const exportedAt = clock().toISOString();
+        const document = buildDocument(db, exportedAt);
+        res.set('Content-Disposition', `attachment; filename="${backupFilename(exportedAt)}"`);
+        // Nothing here is cacheable: the next request must produce the current
+        // garden, not the one a proxy or the ingress layer saw earlier.
+        res.set('Cache-Control', 'no-store');
+        // Recorded only once the response actually completed. A connection that
+        // dropped mid-file produced no usable copy, and telling her she saved one
+        // is exactly the sort of comfortable lie that makes a backup feature worse
+        // than none at all.
+        //
+        // What this measures is honest but narrow: the file was produced and sent
+        // in full. Whether she then kept it is not observable from here — no
+        // browser reports whether a download was saved or cancelled.
+        res.on('finish', () => {
+            if (res.statusCode === 200)
+                writeLastExportAt(db, exportedAt);
+        });
+        res.type('application/json').send(prettyJson(document));
+    });
+    /**
+     * Replaces the garden from a file she picked.
+     *
+     * The dangerous one. Everything that makes it survivable is in
+     * `backup/restore.ts`: one transaction, a safety copy taken on the way past,
+     * and an unconditional bump of all three version counters so no other device
+     * can push its pre-restore state back. That last point is the subtle one and
+     * the reasoning is written out in full there.
+     *
+     * ## No `If-Match`
+     *
+     * Every collection `PUT` refuses to run without a declared version, because a
+     * stale tab saving an array is indistinguishable from an accident. A restore
+     * is the opposite: it is a deliberate, explicit instruction to discard what is
+     * there, taken by someone who has just been shown what the file contains and
+     * confirmed it. Requiring a precondition would mean requiring a successful
+     * read of a garden that may be precisely what is broken — and this is the one
+     * feature that has to work when things are going wrong.
+     *
+     * The protection is not a precondition, it is the safety copy plus the
+     * confirm step in front of it.
+     */
+    router.post('/restore', requireJsonBody, (req, res) => {
+        const result = validateBackupDocument(req.body);
+        if (!result.ok) {
+            if (result.kind === 'unsupported') {
+                // 422: the syntax is fine and we understood it perfectly well. What we
+                // cannot do is apply it.
+                sendError(res, 422, 'unsupported_backup', result.message);
+                return;
+            }
+            sendValidationError(res, result.issues);
+            return;
+        }
+        const outcome = applyRestore(db, { snapshot: result.value.snapshot, settings: result.value.settings }, clock().toISOString());
+        const from = result.value.exportedAt
+            ? ` saved on ${result.value.exportedAt.slice(0, 10)}`
+            : '';
+        res.json({
+            mode: 'replace',
+            message: `Restored your garden from the file${from}. It now holds ` +
+                `${describeCounts(outcome.counts)}, counted by reading the database back after the ` +
+                `change was saved. The garden as it was — ${describeCounts(outcome.safetyCopy.counts)} ` +
+                `— was copied first and can be put back from Settings.`,
+            restored: outcome.counts,
+            replaced: outcome.safetyCopy.counts,
+            settingsRestored: outcome.settingsRestored,
+            versions: tokenise(outcome.versions),
+            safetyCopy: outcome.safetyCopy,
+        });
+        // After the response. Every published sensor is now wrong until this runs.
+        options.onGardenChanged?.();
+    });
+    /**
+     * What the Settings panel needs to describe the state of her backups.
+     *
+     * `lastExportAt` is stored server-side rather than per browser on purpose: a
+     * per-device memory would tell her laptop "you have never saved a copy" the
+     * day after she saved one from her phone, which is worse than saying nothing.
+     */
+    router.get('/backup/status', (_req, res) => {
+        res.json({
+            lastExportAt: readLastExportAt(db),
+            counts: currentCounts(db),
+            safetyCopies: listSafetyCopies(db),
+        });
+    });
+    /**
+     * One safety copy, as a file.
+     *
+     * The in-app undo is the usual route, but a copy that only exists inside this
+     * database does not survive the uninstall it was partly taken against. Being
+     * able to pull it out as a file is what turns it from a convenience into a
+     * backup.
+     */
+    router.get('/backup/safety-copies/:id', (req, res) => {
+        const id = Number(req.params.id);
+        if (!Number.isInteger(id) || id < 1) {
+            sendError(res, 400, 'validation_failed', `${JSON.stringify(req.params.id)} is not a safety copy number.`);
+            return;
+        }
+        const copy = readSafetyCopy(db, id);
+        if (!copy) {
+            sendError(res, 404, 'not_found', `There is no safety copy number ${id}. Only the most recent few are kept, so an older ` +
+                'one may have been pruned to make room.');
+            return;
+        }
+        res.set('Content-Disposition', `attachment; filename="${backupFilename(copy.takenAt).replace('.json', '-before-restore.json')}"`);
+        res.set('Cache-Control', 'no-store');
+        // Stored already-rendered, so what she downloads is byte-for-byte the
+        // document that was captured — not a re-serialisation that might differ.
+        res.type('application/json').send(copy.document);
     });
     router.use((req, res) => {
         sendError(res, 404, 'not_found', `No API route for ${req.method} ${req.originalUrl}`);

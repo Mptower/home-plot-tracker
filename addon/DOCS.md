@@ -149,7 +149,106 @@ Stopping the add-on closes the database cleanly, so a backup taken while it is
 stopped is a single complete file.
 
 Uninstalling the add-on deletes that volume. Take a backup first if the beds
-matter to you.
+matter to you — and see **Saving your own copy** below for a file you can keep
+outside Home Assistant entirely.
+
+## Saving your own copy, and putting one back
+
+Home Assistant's backups are the safety net underneath everything. This is the
+one you can carry: a single file you keep wherever you keep things, that does
+not need Home Assistant to read it and does not need anybody's help to restore.
+
+Both live in **Settings**, inside the app.
+
+### Saving a copy
+
+Press **Save a copy**. You get one file — every seed packet, every bed, every
+harvest, and your notification settings — named for today's date.
+
+It is ordinary text. Open it in Notepad and you will see your own varieties
+listed by name. That is deliberate: a backup you cannot read is a backup you
+cannot check. Nothing secret goes in it — no tokens, no passwords, nothing that
+would matter if you emailed it to someone.
+
+Underneath the button is **Show me the file**, which displays the same content on
+screen. It is worth pressing once, the first time, to see your varieties in it
+with your own eyes — that is the one check that would catch a download that
+saved the wrong thing.
+
+The app remembers when you last saved a copy and says so, for example "you last
+saved a copy 3 weeks ago". It will not nag you. It just answers the question.
+
+**If the download does not work on your phone**, open the app on a computer and
+save it from there. That is real advice, not a workaround — a phone's download
+handling varies by app version, and a laptop's does not.
+
+### Putting a copy back
+
+Press **Choose a file** and pick one.
+
+**Nothing happens yet.** The app reads the file and tells you what is in it
+first, in plain words: *"This file holds 3 seed packets, 2 beds and 14 harvests,
+saved on 14 September 2026."* It also tells you what restoring it would displace.
+Check that against what you expect before you go on. If it is the wrong file,
+press **Cancel** and nothing has changed.
+
+When you confirm, the restore **replaces** your garden with the file's contents.
+It does not merge. If your garden has five harvests and the file has three, you
+end up with three — the ones in the file. That is what makes a restore
+predictable: afterwards, your garden is exactly what you were shown.
+
+A restore is all-or-nothing. If anything in the file is wrong, nothing is
+applied at all — you will never end up with half a garden.
+
+### If you restore the wrong file
+
+**Before** a restore overwrites anything, the app saves a copy of what you had.
+You will see it under **Undo a restore**, labelled with the day it was taken and
+what was in it.
+
+Press **Put this back** and you get the same preview and the same confirmation
+step as any other file — and putting it back saves another copy of what you have
+right now, so undoing an undo works too. Nothing here is a one-way door.
+
+You can also download that copy as an ordinary file and keep it.
+
+The last five are kept.
+
+### Checking that it worked
+
+You do not have to take the app's word for it. After a restore it reports what
+is in your garden by counting what is actually in the database — not by repeating
+what the file claimed. If the file lied about its own contents, the number you
+see afterwards is the true one.
+
+Then go and look at your beds. That is the real check.
+
+### Older backup files
+
+If someone has taken a snapshot of your garden for you with a script, that file
+will very likely restore here as it is, even though it has no header identifying
+it. The app says so when it notices — "this file has no Home Plot Tracker header,
+so it is probably an older snapshot" — and then restores it anyway. That message
+is information, not a warning.
+
+### When it refuses
+
+Every refusal says what is actually wrong and changes nothing:
+
+- **"This file is empty"** — the download did not finish. Save a copy again.
+- **"This looks like a web page, not a backup"** — your phone saved the sign-in
+  page instead of the file. Try again, or save it from a computer.
+- **"This file says it belongs to …"** — it is some other program's export.
+- **"Saved by a newer version"** — update the add-on, then restore it.
+- **"This backup is incomplete"** — a section is missing, and a missing section
+  cannot safely be treated as an empty one.
+
+### If you have the app open on two devices
+
+Restore on one, and the other catches up the next time you look at it. If you had
+typed something on the second device that was not saved yet, it is kept and you
+are asked about anything that genuinely clashes. The second device cannot quietly
+undo the restore.
 
 ## There is no authentication, on purpose
 

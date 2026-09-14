@@ -132,6 +132,10 @@ Three collections, each with exactly two operations, plus a settings singleton:
 | `GET`  | `/api/home-assistant`         | the frost watch, if there is one         |
 | `GET`  | `/api/home-assistant/status`  | read-only integration diagnostics        |
 | `POST` | `/api/import`                 | first-run migration into an empty garden |
+| `GET`  | `/api/export`                 | the whole garden as one downloadable file |
+| `POST` | `/api/restore`                | replaces the whole garden from such a file |
+| `GET`  | `/api/backup/status`          | counts, last export, available safety copies |
+| `GET`  | `/api/backup/safety-copies/:id` | one pre-restore safety copy, as a file  |
 
 Request and response bodies for the collections are bare JSON arrays. The
 version travels in headers, not in an envelope, so the body stays exactly the
@@ -374,6 +378,94 @@ All three keys are required. Omitting one is an error rather than an implicit
 "wipe that collection", because the destructive reading of an ambiguous payload
 is the one you cannot undo.
 
+### Backup and restore
+
+`GET /api/export` returns the whole garden as one pretty-printed JSON file with
+`Content-Disposition: attachment`, so the browser — or on Android, the system
+download manager the companion app hands it to — saves it under a dated name. It
+carries `format`, `formatVersion`, `exportedAt` and `counts` alongside the three
+collections and the settings singleton. No secrets: the long-lived access token
+lives in add-on options and never enters the document.
+
+`POST /api/restore` is the way back in, and it is deliberately **not** `/import`
+with a `force` flag. Import guards an already-shipped contract — "only into an
+empty garden, no exceptions" — and a flag that switches that guard off is a flag
+that eventually gets set by accident. Restore is a different operation with a
+different promise, so it is a different endpoint.
+
+In one `BEGIN IMMEDIATE` it takes a safety copy of the current garden, replaces
+all three collections, writes the settings if the file has them, and bumps every
+version. It either does all of that or none of it.
+
+**Restore replaces; it does not merge.** Merging during a recovery produces
+duplicated harvests and no way to tell which copy is which, and it makes the
+result impossible to describe in advance — which would defeat the preview the
+whole feature is built around. After a restore the garden is exactly what the
+preview said it would be.
+
+#### Why every version is bumped, even when nothing changed
+
+This is the part worth reading twice. A restore that only changed the harvests
+would, if versions were bumped per-collection, leave a second device's seed
+`ETag` still valid — and that device could then `PUT` its pre-restore seeds back
+with no `409`, no conflict chooser, and nothing on screen. The restore would be
+silently half-undone by a tab nobody had touched.
+
+So all three are bumped unconditionally. Every open tab's `If-Match` is stale the
+moment a restore commits, every write goes through the three-way merge in
+`client/src/lib/merge.ts`, and the merge's own rules do the rest: "they deleted
+something we never edited" honours the delete, "only they touched it" takes the
+restored value, and a row she genuinely edited that the restore deleted becomes
+an `edited-here-deleted-there` conflict she is asked about. A stale tab can
+contribute her real unsaved edits and cannot reinstate the garden it was holding.
+`client/test/backup-merge.test.ts` pins that; `server/test/backup-restore.test.ts`
+pins the 409 that gets it there.
+
+An idle second tab also catches up on its own: `useGardenData` refreshes every
+collection on `visibilitychange`, so looking at the other device is enough.
+
+#### Bare snapshots restore as they are
+
+Only `seeds`, `beds` and `harvests` are required. `format`, `formatVersion`,
+`exportedAt`, `counts` and `settings` are all optional, which makes a bare
+`{ seeds, beds, harvests }` file — the shape the maintainer's `export-garden.mjs`
+has been writing before every rollout — valid input with no conversion step.
+Those files predate this feature and are the oldest copies of the garden that
+exist, so reading them is the difference between the user being able to recover
+and needing someone else to do it for her.
+
+A file with **no** `format` key and a file with the **wrong** `format` are
+treated differently on purpose. Absence is silence and is read on its merits; a
+wrong value is a claim and gets contradicted by name. Collapsing the two would
+tell those old snapshots they "are not a Home Plot Tracker backup", which is both
+false and the one sentence that would stop her restoring the only thing she has.
+
+Unknown top-level keys are tolerated, so a later release can add an optional
+field without stranding its files in an older install that could have read them.
+`formatVersion` is what guards genuinely unreadable files, and a file from the
+future is refused as `422 unsupported_backup` — a separate code from validation
+failure, because "your file has a problem on line 40" is a lie about a file that
+was never broken.
+
+#### Safety copies
+
+Every restore stores the pre-restore garden in `garden_snapshots` first, inside
+the same transaction, and the app offers it back as **Undo a restore**. The last
+five are kept. `GET /api/backup/safety-copies/:id` serves one as a downloadable
+file, so an undo is possible even if the app will not load.
+
+An in-app undo goes through the same `reviewBackupFile` → preview → confirm path
+as a file she picked herself, which means it is an ordinary restore and takes its
+own safety copy. Undoing an undo therefore works, and a corrupted safety copy is
+refused rather than trusted for being ours.
+
+The counts a restore reports are read back out of the database after the commit,
+never echoed from the file. A file that lies about its own `counts` gets
+contradicted rather than believed.
+
+`ha_state` is deliberately left alone — see `server/src/backup/restore.ts` for
+why the frost notifier needs no help here.
+
 ## Database
 
 SQLite, through `node:sqlite`. Opened with `journal_mode = WAL` (so a read
@@ -394,10 +486,13 @@ Adding one means appending to the array — never editing an applied entry, sinc
 the ledger records versions rather than checksums and an edit would silently
 never re-run. The rules are written at the top of that file.
 
-Four so far: `1` builds `seeds`, `beds` and `harvests`; `2` adds
+Five so far: `1` builds `seeds`, `beds` and `harvests`; `2` adds
 `collection_versions`, the counter behind the `ETag` on every collection; `3`
 adds `ha_state`, where the integration remembers which cold snaps it has
-already notified about; `4` adds the `settings` singleton and seeds it.
+already notified about; `4` adds the `settings` singleton and seeds it; `5` adds
+`garden_snapshots`, where a restore parks the garden it is about to replace, and
+`app_state`, a small key/value table whose only occupant today is the timestamp
+of the last export.
 
 Migration `4` is the only one that reads anything outside the database. It takes
 a `MigrationContext`, which `server/src/index.ts` fills from `readSettingsSeed()`
@@ -797,6 +892,8 @@ HTTP and SQLite rather than mocks of them. Coverage:
 | `ha-degraded.test.ts`   | Home Assistant throwing, timing out, 502ing or returning HTML |
 | `settings.test.ts`      | the singleton constraint, migration `4` seeding from the old add-on options, idempotent re-runs, a corrupt or missing row degrading to defaults |
 | `settings-api.test.ts`  | `GET`/`PUT` round trips, the deliberate absence of `If-Match`, validation, the status endpoint, and settings changing behaviour with no restart |
+| `backup-export.test.ts` | the exported envelope, that no secret is in it, the pretty printer surviving quotes, newlines and unicode, and the last-export timestamp |
+| `backup-restore.test.ts` | replace-not-merge, bare snapshots restoring, atomicity, refusals by kind, safety copies and their pruning, and every version bumping so no stale tab can write |
 
 The Home Assistant tests run against a fake Supervisor
 ([`fakeHomeAssistant`](server/test/helpers.ts)) rather than a live instance,
@@ -816,6 +913,9 @@ plausibly be wrong therefore lives in a pure module rather than in a component:
 | `plantSuggest.test.ts`    | suggestion ordering, deduplication across spellings, limits, arrow-key wrap |
 | `categoryFix.test.ts`     | which packets are queried, the exact-match rule, dismissals, and never mutating her data |
 | `harvest.test.ts`         | variety options drawn from vault, beds and log alike       |
+| `backup.test.ts`          | reading a backup file before anything happens: counts, the refusal sentences, and a saved sign-in page being named for what it is |
+| `backup-merge.test.ts`    | what a second device holding stale ETags does when a restore lands |
+| `backup-parity.test.ts`   | the format markers duplicated across the server/client fence agreeing |
 
 ## Migration phases
 
@@ -999,6 +1099,26 @@ Saving does not force an immediate forecast re-poll. The next scheduled poll
 picks the new values up, which avoids a save turning notifications on and
 firing one in the same second — a surprise, from a screen whose job is to stop
 surprises.
+
+Below all of that is **backup and restore**: save a copy of the whole garden,
+put one back, and undo the last restore. It is described from the user's side in
+[`addon/DOCS.md`](addon/DOCS.md) and from the server's in *Backup and restore*
+above.
+
+#### Why Settings is no longer gated behind a loaded garden
+
+This view used to render only once the garden had loaded, which was a deferred
+wart while it held three notification controls. It is not tenable with backup
+and restore on it. The moment somebody reaches for a backup is precisely the
+moment something has gone wrong — an empty garden, a failing read, a database
+that will not open — and a recovery screen that only appears when recovery is
+unnecessary is decoration.
+
+So `App.tsx` renders Settings outside the `status.phase === 'ready'` gate, and
+`useBackup` talks to `/api/backup/status` independently of `useGardenData`. The
+export link is a plain anchor to the server, so it works even if the garden
+never loaded at all. The other views stay gated, as does the banner and conflict
+machinery that only makes sense once data is in hand.
 
 ## Category colour
 

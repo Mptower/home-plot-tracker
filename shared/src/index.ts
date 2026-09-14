@@ -216,6 +216,112 @@ export interface ImportResultBody {
 }
 
 /**
+ * Backup and restore.
+ *
+ * Her whole garden lives in one SQLite file inside an add-on `/data` directory
+ * that Supervisor deletes on uninstall, with no confirmation step. These shapes
+ * are how she gets a copy out of it and back in without needing anybody else.
+ *
+ * Everything here is a type. The two constants that describe the file —
+ * its `format` string and the highest `formatVersion` this build understands —
+ * are deliberately **not** exported from this package, because `server/src`
+ * cannot import a runtime value from it: the add-on image ships no `shared/` at
+ * all. Each side declares its own copy, and `server/test/backup-parity.test.ts`
+ * fails if they drift.
+ */
+
+/**
+ * One exported garden, as a file.
+ *
+ * Written pretty-printed, because a backup format you cannot eyeball is a
+ * backup format you cannot trust. Everything except the three collections is
+ * optional, which is not laxity — it is what makes a bare
+ * `{ seeds, beds, harvests }` snapshot, the shape the maintainer's
+ * `export-garden.mjs` has been writing before every rollout, a valid file that
+ * restores with no conversion. The collections stay required because an omitted
+ * key must never be indistinguishable from "wipe this collection".
+ */
+export interface GardenBackupDocument {
+  /** Always `home-plot-tracker.garden`. Absent in a bare snapshot. */
+  format?: string;
+  /**
+   * Version of the **file format**, bumped only when an older build could
+   * misread a newer file.
+   *
+   * Named `formatVersion` rather than `schemaVersion` because `/api/health`
+   * already reports a `schemaVersion` and means something entirely different by
+   * it — the SQLite migration number. Two unrelated integers under one name,
+   * both visible while somebody is debugging her install, is a support
+   * conversation that goes wrong.
+   */
+  formatVersion?: number;
+  /** ISO 8601. Absent in a bare snapshot, and never invented for one. */
+  exportedAt?: string;
+  /**
+   * A human-facing summary, so opening the file in Notepad answers "what is in
+   * here?" without counting. **Advisory only** — a restore recomputes from the
+   * arrays and never trusts this.
+   */
+  counts?: Record<CollectionName, number>;
+  seeds: SeedPacket[];
+  beds: GardenBed[];
+  harvests: HarvestLog[];
+  /**
+   * Her notification preferences. Safe to include: two `HH:MM` strings and a
+   * boolean, no credentials of any kind. Absent means a restore leaves whatever
+   * is already configured alone.
+   */
+  settings?: GardenSettings;
+}
+
+/** A stored copy of the garden as it was immediately before a restore. */
+export interface SafetyCopySummary {
+  id: number;
+  takenAt: string;
+  /** Why it was taken. `pre-restore` is the only reason today. */
+  reason: string;
+  counts: Record<CollectionName, number>;
+}
+
+/**
+ * Response from a successful `POST /api/restore`.
+ *
+ * `restored` is counted out of the database **after the transaction committed**,
+ * never echoed from the file that was parsed. Repeating what you were handed
+ * proves nothing, and a restore that silently half-worked looks exactly like one
+ * that worked — right up until she goes looking for a harvest that is not there.
+ */
+export interface RestoreResultBody {
+  mode: 'replace';
+  message: string;
+  /** What is actually in the garden now, read back per collection. */
+  restored: Record<CollectionName, number>;
+  /** What was there before, from the safety copy taken on the way past. */
+  replaced: Record<CollectionName, number>;
+  /** Whether the file carried settings and they were applied. */
+  settingsRestored: boolean;
+  /** Versions after the restore, so a client can write again without a GET. */
+  versions: Record<CollectionName, VersionToken>;
+  /** The undo. Always present: a restore never runs without taking one. */
+  safetyCopy: SafetyCopySummary;
+}
+
+/** Answers `GET /api/backup/status`, for the Settings panel. */
+export interface BackupStatusBody {
+  /**
+   * When a copy was last successfully downloaded, or `null` if never.
+   *
+   * Recorded on the server rather than per browser: a per-device memory would
+   * tell her laptop "never" after she saved a copy from her phone.
+   */
+  lastExportAt: string | null;
+  /** What is in the garden right now, so the panel can say what a copy contains. */
+  counts: Record<CollectionName, number>;
+  /** Newest first. */
+  safetyCopies: SafetyCopySummary[];
+}
+
+/**
  * Home Assistant.
  *
  * The app is deployed as an HA add-on, so it can read her weather forecast, warn

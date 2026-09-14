@@ -123,12 +123,6 @@ export default function App() {
 
       <main className="min-w-0 flex-1 px-4 py-8 sm:px-8 lg:px-12">
         <div className="mx-auto w-full max-w-7xl space-y-6">
-          {status.phase === 'loading' && <GardenLoading />}
-
-          {status.phase === 'failed' && (
-            <GardenUnavailable error={status.loadError} onRetry={reload} />
-          )}
-
           {status.phase === 'ready' && (
             <>
               <FrostBanner />
@@ -151,22 +145,48 @@ export default function App() {
                   onDismiss={handleDismissOffer}
                 />
               )}
+            </>
+          )}
 
-              {activeView === 'planner' && (
-                <BedPlannerView beds={garden.beds} setBeds={garden.setBeds} seeds={garden.seeds} />
+          {/*
+            Settings is deliberately outside the load gate that the garden views
+            sit behind. It holds the backup panel, and a way to save or restore a
+            copy of the garden is worth least when everything is working and most
+            when the garden will not load at all. The three views below stay
+            gated: a bed planner with no beds in it is not a screen worth drawing.
+          */}
+          {activeView === 'settings' ? (
+            <SettingsView onRestored={reload} />
+          ) : (
+            <>
+              {status.phase === 'loading' && <GardenLoading />}
+
+              {status.phase === 'failed' && (
+                <GardenUnavailable error={status.loadError} onRetry={reload} />
               )}
-              {activeView === 'vault' && (
-                <SeedVaultView seeds={garden.seeds} setSeeds={garden.setSeeds} />
+
+              {status.phase === 'ready' && (
+                <>
+                  {activeView === 'planner' && (
+                    <BedPlannerView
+                      beds={garden.beds}
+                      setBeds={garden.setBeds}
+                      seeds={garden.seeds}
+                    />
+                  )}
+                  {activeView === 'vault' && (
+                    <SeedVaultView seeds={garden.seeds} setSeeds={garden.setSeeds} />
+                  )}
+                  {activeView === 'harvest' && (
+                    <HarvestLogView
+                      harvests={garden.harvests}
+                      setHarvests={garden.setHarvests}
+                      seeds={garden.seeds}
+                      beds={garden.beds}
+                    />
+                  )}
+                </>
               )}
-              {activeView === 'harvest' && (
-                <HarvestLogView
-                  harvests={garden.harvests}
-                  setHarvests={garden.setHarvests}
-                  seeds={garden.seeds}
-                  beds={garden.beds}
-                />
-              )}
-              {activeView === 'settings' && <SettingsView />}
             </>
           )}
         </div>

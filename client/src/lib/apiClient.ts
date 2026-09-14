@@ -36,7 +36,14 @@
  */
 import { apiUrl } from './api';
 import { readSettingsBody } from './settings';
-import type { CollectionName, GardenSettings, GardenSnapshot, IntegrationStatusBody } from '../types';
+import type {
+  BackupStatusBody,
+  CollectionName,
+  GardenSettings,
+  GardenSnapshot,
+  IntegrationStatusBody,
+  RestoreResultBody,
+} from '../types';
 
 /** A hung connection is indistinguishable from a dead one; stop waiting. */
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -516,4 +523,143 @@ export async function fetchIntegrationStatus(): Promise<IntegrationStatusBody | 
   } catch {
     return null;
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Backups                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The address of the export, for an `<a href>` and for the fallback fetch.
+ *
+ * Through `apiUrl` like everything else here, and for a sharper reason than
+ * usual: Home Assistant ingress mints a fresh per-session path prefix, so a
+ * hardcoded `/api/export` in an anchor would 404 on her system while working
+ * perfectly in development. There is no absolute API path anywhere in this
+ * module and there must never be one.
+ */
+export function exportUrl(): string {
+  return apiUrl('export');
+}
+
+export function safetyCopyUrl(id: number): string {
+  return apiUrl(`backup/safety-copies/${id}`);
+}
+
+/** Everything the backup panel needs to describe the state of her copies. */
+export async function fetchBackupStatus(): Promise<BackupStatusBody> {
+  const { response, body } = await send('backup/status');
+
+  if (!response.ok) {
+    throw failureFor(response, body, 'The garden server could not tell us about your backups.');
+  }
+
+  if (!isRecord(body) || !isRecord(body.counts)) {
+    throw new ApiError('The garden server sent something unexpected about your backups.', {
+      kind: 'malformed',
+      status: response.status,
+    });
+  }
+
+  return {
+    lastExportAt: typeof body.lastExportAt === 'string' ? body.lastExportAt : null,
+    counts: readCounts(body.counts),
+    safetyCopies: Array.isArray(body.safetyCopies)
+      ? body.safetyCopies.flatMap((copy) =>
+          isRecord(copy) && typeof copy.id === 'number'
+            ? [
+                {
+                  id: copy.id,
+                  takenAt: typeof copy.takenAt === 'string' ? copy.takenAt : '',
+                  reason: typeof copy.reason === 'string' ? copy.reason : 'pre-restore',
+                  counts: readCounts(copy.counts),
+                },
+              ]
+            : [],
+        )
+      : [],
+  };
+}
+
+/**
+ * Fetches the export as raw text, exactly as the server formatted it.
+ *
+ * Used for the "show me the file" panel and nothing else. Deliberately *not*
+ * used to drive the download: the download is a plain link to `exportUrl()` so
+ * the browser — or on Android, the system download manager the companion app
+ * hands it to — deals with a real http(s) URL and the filename the server
+ * supplies.
+ *
+ * Returns the bytes rather than re-serialising a parsed object, because the
+ * server's own formatting is the point: a re-`stringify` here would put every
+ * cell of a bed layout on its own line and make the thing unreadable.
+ */
+export async function fetchExportText(): Promise<string> {
+  const response = await fetch(exportUrl(), {
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+
+  if (!response.ok) {
+    throw new ApiError('The garden server could not produce a copy of your garden.', {
+      kind: response.status >= 500 ? 'server' : 'rejected',
+      status: response.status,
+    });
+  }
+
+  return response.text();
+}
+
+/**
+ * Fetches one pre-restore safety copy as raw text.
+ *
+ * Routing an undo through the same `reviewBackupFile` → preview → confirm path
+ * as any other file is deliberate. It costs one round trip and buys two things:
+ * she is shown what she is about to put back before it happens, and the undo is
+ * an ordinary restore, which means it takes its own safety copy. Undoing an undo
+ * therefore works, and the panel needs no second code path to make it work.
+ */
+export async function fetchSafetyCopyText(id: number): Promise<string> {
+  const response = await fetch(safetyCopyUrl(id), {
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+  });
+
+  if (!response.ok) {
+    throw new ApiError('That saved copy could not be read back from the garden server.', {
+      kind: response.status >= 500 ? 'server' : 'rejected',
+      status: response.status,
+    });
+  }
+
+  return response.text();
+}
+
+/**
+ * Replaces the whole garden from a file.
+ *
+ * The one call in this module that can destroy data, and the only one whose
+ * failure modes are worth distinguishing in the UI: `unsupported_backup` means
+ * the file is fine but not applicable here, which needs different words from a
+ * file with a broken record in it.
+ */
+export async function restoreGarden(document: unknown): Promise<RestoreResultBody> {
+  const { response, body } = await send('restore', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(document),
+  });
+
+  if (!response.ok) {
+    throw failureFor(response, body, 'The garden server would not restore that file.');
+  }
+
+  if (!isRecord(body) || !isRecord(body.restored)) {
+    throw new ApiError('The garden server sent something unexpected after restoring.', {
+      kind: 'malformed',
+      status: response.status,
+    });
+  }
+
+  return body as unknown as RestoreResultBody;
 }
