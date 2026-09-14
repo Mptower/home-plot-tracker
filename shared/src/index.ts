@@ -224,13 +224,10 @@ export interface ImportResultBody {
  * has to run identically with no Home Assistant at all, which is how it is
  * developed and how the tests run.
  *
- * What is shared is the *shape* of the answer, and nothing else. The bands, the
- * crop-family mapping and the assessment are runtime code and live in
- * `server/src/ha/`, along with everything that talks to Supervisor — partly
- * because `SUPERVISOR_TOKEN` must never reach the browser, and partly because
- * the add-on image does not ship this package at all. See the note at the top
- * of `homeAssistant.ts`; it is the difference between the add-on booting and
- * not.
+ * What is shared is the *shape* of the answer, plus the crop-family tenderness
+ * map below. The bands, the forecast reading and the assessment itself are
+ * server-side, along with everything that talks to Supervisor, because
+ * `SUPERVISOR_TOKEN` must never reach the browser.
  */
 export type {
   BedAtRisk,
@@ -245,9 +242,13 @@ export type {
 
 /**
  * The plant catalogue, so nobody has to know botanical families to file a seed
- * packet. Unlike everything above this line it is a runtime value, and it is
- * for the **client only** — see the header of `plants.ts` for why importing it
- * from `server/src` would crash the add-on on boot.
+ * packet.
+ *
+ * Unlike the types above this line these are runtime values, and both the
+ * client and the server import them: the picker uses them to suggest a plant,
+ * and the frost engine uses them to work out what a bed square is when there is
+ * no seed packet to ask. That is only safe because the add-on image ships this
+ * package — see the header of `plants.ts`.
  */
 export type { PlantCatalogueEntry, PlantMatch, PlantMatchConfidence } from './plants.js';
 export {
@@ -260,15 +261,16 @@ export {
 } from './plants.js';
 
 /**
- * Cold tolerance per crop family, for the **client only**.
+ * Cold tolerance per crop family.
  *
- * A browser-side copy of `server/src/ha/tenderness.ts`, kept honest by
- * `server/test/tenderness-parity.test.ts`. The server must keep importing its
- * own, for the same packaging reason the catalogue carries — see the header of
- * `tenderness.ts` next door. The names are prefixed so nothing on the server
- * can reach for one of these by muscle memory and get a boot crash.
+ * The single copy. The frost warnings come from here by way of
+ * `server/src/ha/tenderness.ts`, which re-exports it, and the seed vault uses
+ * it to explain *why* a miscategorised packet matters — "this one is filed as
+ * something the frost engine treats as hardy, so you are not being warned about
+ * it". There is no second copy to drift.
  */
 export {
-  CATEGORY_TENDERNESS as CLIENT_CATEGORY_TENDERNESS,
-  tendernessOf as clientTendernessOf,
+  CATEGORY_TENDERNESS,
+  isKnownTendernessCategory,
+  tendernessOf,
 } from './tenderness.js';

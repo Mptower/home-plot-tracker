@@ -13,6 +13,11 @@
     "sourceMap": true,
     "outDir": "dist",
     "rootDir": "src",
+    /* The compiled output is vendored into the add-on build context, so emit has to
+       be identical everywhere; tsc defaults this to the host's line ending. The
+       staging script normalises on top, but a build that does not depend on it is
+       one less thing between a Windows checkout and her add-on. */
+    "newLine": "lf",
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
 
     "strict": true,

@@ -1,4 +1,5 @@
 import { FROST_THRESHOLDS_F, tendernessOf } from "./tenderness.js";
+import { buildCategoryLookup } from "./varietyCategory.js";
 /** Rank for comparing bands. Only ever used for ordering, never persisted. */
 export const SEVERITY_RANK = {
     none: 0,
@@ -74,15 +75,6 @@ function tallyBed(bed, categoryOf) {
         list.sort((left, right) => left.localeCompare(right));
     }
     return { bedId: bed.id, bedName: bed.name, byTenderness, unknownSquares };
-}
-/** Indexes the vault by variety name, so a lookup is a map hit rather than a scan. */
-function buildCategoryLookup(seeds) {
-    const byVariety = new Map();
-    for (const seed of seeds) {
-        if (typeof seed?.variety === 'string')
-            byVariety.set(seed.variety, seed.category);
-    }
-    return (variety) => byVariety.get(variety) ?? null;
 }
 /**
  * The coldest night worth mentioning, and what it means for her beds.

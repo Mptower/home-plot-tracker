@@ -1,29 +1,4 @@
 /**
- * How badly each crop family minds the cold.
- *
- * The whole point of the frost warning is that it names *her* plants. "Frost
- * Saturday night" is something a phone weather app already says; "your tomatoes
- * and squash in Bed 1 are tender, the kale will be fine" is the part worth
- * building. That distinction comes from here.
- *
- * The mapping is deliberately coarse — three values, keyed on the category a
- * seed packet already carries — because the alternative is a per-variety cold
- * hardiness database that nobody will maintain and that would be wrong for half
- * her packets anyway.
- *
- * ## There used to be two of these
- *
- * This file was a hand-kept duplicate of `server/src/ha/tenderness.ts`, held in
- * step by a parity test, because the add-on image did not ship this package and
- * a server runtime import from it would have crashed the add-on on boot. That is
- * no longer true: `scripts/build-addon.mjs` stages this package's build into the
- * image as a real `file:` dependency, so the server imports this map instead of
- * keeping its own copy. `server/src/ha/tenderness.ts` re-exports what is here
- * and adds the frost bands, which are server-side business.
- */
-import type { Tenderness } from './index.js';
-
-/**
  * Crop family to cold tolerance.
  *
  * `Herb` is the one genuine compromise. It spans basil, which collapses at
@@ -47,9 +22,7 @@ import type { Tenderness } from './index.js';
  * something called "constructor" or "toString" would find an inherited property
  * and be classified as whatever that happens to be, instead of `unknown`.
  */
-export const CATEGORY_TENDERNESS: Readonly<Record<string, Tenderness>> = Object.assign(
-  Object.create(null) as Record<string, Tenderness>,
-  {
+export const CATEGORY_TENDERNESS = Object.assign(Object.create(null), {
     Nightshade: 'tender',
     Cucurbit: 'tender',
     Legume: 'tender',
@@ -61,23 +34,20 @@ export const CATEGORY_TENDERNESS: Readonly<Record<string, Tenderness>> = Object.
     Root: 'hardy',
     'Leafy Green': 'hardy',
     Fruit: 'hardy',
-  } satisfies Record<string, Tenderness>,
-);
-
+});
 /**
  * Cold tolerance for a category, or `unknown` for anything unrecognised.
  *
  * Null-prototype lookup, because the keys come from user input: an ordinary
  * object would answer for `constructor` and `toString`.
  */
-export function tendernessOf(category: string | null | undefined): Tenderness {
-  if (!category) return 'unknown';
-
-  return Object.hasOwn(CATEGORY_TENDERNESS, category)
-    ? (CATEGORY_TENDERNESS[category] ?? 'unknown')
-    : 'unknown';
+export function tendernessOf(category) {
+    if (!category)
+        return 'unknown';
+    return Object.hasOwn(CATEGORY_TENDERNESS, category)
+        ? (CATEGORY_TENDERNESS[category] ?? 'unknown')
+        : 'unknown';
 }
-
 /**
  * Whether this mapping actually has an answer for a category.
  *
@@ -87,6 +57,7 @@ export function tendernessOf(category: string | null | undefined): Tenderness {
  * warned about — which is the bug this whole mapping exists to prevent. See
  * `server/src/ha/varietyCategory.ts`.
  */
-export function isKnownTendernessCategory(category: string | null | undefined): boolean {
-  return typeof category === 'string' && Object.hasOwn(CATEGORY_TENDERNESS, category);
+export function isKnownTendernessCategory(category) {
+    return typeof category === 'string' && Object.hasOwn(CATEGORY_TENDERNESS, category);
 }
+//# sourceMappingURL=tenderness.js.map

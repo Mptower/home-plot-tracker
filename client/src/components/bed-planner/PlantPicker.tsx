@@ -270,8 +270,8 @@ export function PlantPicker({
                     From the plant list
                   </h4>
                   <p className="mt-1 px-1 text-xs text-stone-500">
-                    Not in your vault. Frost warnings need a seed packet, so add one for anything
-                    you plant from here.
+                    Not in your vault — the frost warning still knows these by name. Add a packet
+                    when you want to track the brand, the year and how it germinated.
                   </p>
 
                   <ul className="mt-2 space-y-1.5">

@@ -39,7 +39,7 @@
  * described in a sentence, while declining to have an opinion about the rest.
  */
 import type { SeedPacket, Tenderness } from '../types';
-import { clientTendernessOf, matchPlant, normalizePlantName, STORAGE_KEYS } from '@hpt/shared';
+import { matchPlant, normalizePlantName, STORAGE_KEYS, tendernessOf } from '@hpt/shared';
 
 /** One packet the catalogue disagrees with, and what accepting would mean. */
 export interface CategoryFix {
@@ -100,8 +100,8 @@ export function findCategoryFixes(
     const key = categoryFixKey(packet.variety, stored);
     if (dismissed.has(key)) continue;
 
-    const storedTenderness = clientTendernessOf(stored);
-    const suggestedTenderness = clientTendernessOf(match.entry.category);
+    const storedTenderness = tendernessOf(stored);
+    const suggestedTenderness = tendernessOf(match.entry.category);
 
     fixes.push({
       key,

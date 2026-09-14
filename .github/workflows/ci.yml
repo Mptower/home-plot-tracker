@@ -51,7 +51,64 @@ jobs:
             sleep 1
           done
           echo
+          curl --silent --fail --output /dev/null http://127.0.0.1:8099/api/health \
+            || { echo "::error::the add-on never became healthy"; docker logs hpt; exit 1; }
           curl --silent --fail --output /dev/null http://127.0.0.1:8099/
           curl --silent --fail --output /dev/null http://127.0.0.1:8099/api/seeds
-          docker logs hpt
-          docker rm --force hpt
+
+      # A 200 from /api/health already proves @hpt/shared resolved: index.js
+      # imports ha/service.js imports ha/frost.js imports @hpt/shared, all at the
+      # top level, so a failed resolution kills the process before it listens.
+      # These steps make that implicit proof explicit and readable in the log,
+      # because the failure mode being guarded against is Julie's garden
+      # vanishing from her sidebar.
+      - name: Show how the catalogue is on disk
+        run: |
+          echo '--- /app ---'
+          docker exec hpt ls -l /app
+          echo '--- /app/shared ---'
+          docker exec hpt ls -l /app/shared
+          echo '--- /app/node_modules/@hpt (the symlink npm ci created) ---'
+          docker exec hpt ls -l /app/node_modules/@hpt
+          echo '--- resolved package.json ---'
+          docker exec hpt cat /app/node_modules/@hpt/shared/package.json
+
+      # The staging script flattens shared/dist to /app/shared because .gitignore
+      # matches the bare names `dist` and `node_modules` at any depth. A nested
+      # one would be committed on the build machine and absent from the clone
+      # Supervisor builds, so assert the flattening survived into the image.
+      - name: No directory the git clone would have eaten
+        run: |
+          found=$(docker exec hpt find /app/shared /app/server /app/client \
+            -name node_modules -o -name dist)
+          if [ -n "$found" ]; then
+            echo "::error::staged tree contains a git-ignored directory name:"
+            echo "$found"
+            exit 1
+          fi
+          echo "none, as expected"
+
+      # The actual feature, exercised against the compiled files in the image:
+      # a variety with no seed packet behind it still resolves to a crop family.
+      # This is the import that would have crashed the add-on on boot.
+      - name: The frost engine can place a plant with no seed packet
+        run: |
+          docker exec --workdir /app/server hpt node --input-type=module --eval "
+            const { buildCategoryLookup } = await import('/app/server/ha/varietyCategory.js');
+            const { tendernessOf } = await import('@hpt/shared');
+            const lookup = buildCategoryLookup([]);
+            for (const variety of ['Sugar Baby Watermelon', 'cherry tomatoes', 'Who Knows']) {
+              const category = lookup(variety);
+              console.log(variety, '->', category, '->', tendernessOf(category ?? ''));
+            }
+            if (lookup('Sugar Baby Watermelon') !== 'Cucurbit') throw new Error('catalogue fallback is not working in the image');
+            if (lookup('Who Knows') !== null) throw new Error('the resolver is guessing');
+          "
+
+      - name: Add-on log
+        if: always()
+        run: docker logs hpt || true
+
+      - name: Stop it
+        if: always()
+        run: docker rm --force hpt || true
