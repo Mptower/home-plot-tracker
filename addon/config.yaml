@@ -5,7 +5,7 @@
 # ingress proxy, which has already authenticated the user's HA session.
 name: The Home Plot Tracker
 slug: home_plot_tracker
-version: "0.3.0"
+version: "0.4.0"
 description: Plan garden beds, catalogue seed packets and log every harvest, alongside the rest of your home.
 url: https://github.com/Mptower/home-plot-tracker
 arch:
