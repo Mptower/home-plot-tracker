@@ -646,6 +646,22 @@ in [`server/src/ha/notifier.ts`](server/src/ha/notifier.ts) exists to *suppress*
 one. A warning she learns to swipe away is worse than no warning, because it
 takes the real one with it.
 
+It opens with the thing to go and do. A lock screen truncates, and the first
+clause is the only part guaranteed to be read:
+
+> **Frost tonight — 31°F**
+> Cover your Cherry Tomato, Jalapeño and Basil — they're in Tomato bed and Bed 2.
+> It'll be coldest around 3am. The Kale should be fine.
+
+The verb changes at a hard freeze. A bedsheet buys two or three degrees, which
+is worth doing at 31°F and worth nothing at 24°F, so below 28°F it says *pick
+what you can* and says why rather than sending her out with a sheet that will
+not help. There is no botanical vocabulary anywhere in it: she does not have to
+know what a nightshade is to use the rest of the app, and she should not have to
+know what "tender" means to read her phone at ten at night. The hedges are kept
+— "should be fine", never "will be fine" — because this is a forecast and
+over-promising in a frost warning costs a crop.
+
 - One send per night. The forecast is read 96 times a day; this is the rule that
   stops that becoming 96 notifications.
 - A second only if the band gets *worse*. Capped at two, so a forecast wobbling
@@ -825,7 +841,7 @@ HTTP and SQLite rather than mocks of them. Coverage:
 | `tenderness.test.ts`    | the server's tenderness map being the shared one, not a copy of it |
 | `shared-imports.test.ts` | the add-on image actually shipping `@hpt/shared`: declared, locked, staged, resolvable and not git-ignored |
 | `ha-sensors.test.ts`    | the exact published payloads, rounding, the collision guard |
-| `ha-notify.test.ts`     | one per snap, escalation, quiet hours, surviving a restart   |
+| `ha-notify.test.ts`     | one per snap, escalation, quiet hours, surviving a restart, and the exact wording of every branch of the message |
 | `ha-absent.test.ts`     | no Home Assistant at all: no client, no timers, no sockets   |
 | `ha-degraded.test.ts`   | Home Assistant throwing, timing out, 502ing or returning HTML |
 | `settings.test.ts`      | the singleton constraint, migration `4` seeding from the old add-on options, idempotent re-runs, a corrupt or missing row degrading to defaults |
