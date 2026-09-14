@@ -68,7 +68,24 @@ export interface GardenSettings {
   quietHoursEnd: string;
 }
 
-/** Canonical category list backing every category dropdown in the app. */
+/**
+ * Canonical category list backing every category dropdown in the app.
+ *
+ * These are **crop families**, not supermarket aisles, because the crop-rotation
+ * warning depends on them being families — families are what share soil-borne
+ * disease and pests. It is also why melons are `Cucurbit` rather than `Fruit`,
+ * and why a ground cherry is a `Nightshade`.
+ *
+ * Each entry is additionally chosen so that every plant in it takes a frost the
+ * same way, which is what lets `CATEGORY_TENDERNESS` in
+ * `server/src/ha/tenderness.ts` stay one value per family. `Fruit` holds only
+ * hardy perennial fruit for exactly that reason: a category containing both a
+ * strawberry and a watermelon could not have a single honest answer.
+ *
+ * Adding one here has three obligations, and the build will catch you on the
+ * first: `CATEGORY_TENDERNESS`, `client/src/lib/categoryTheme.ts`, and
+ * `shared/src/plants.ts` so the catalogue can actually assign it.
+ */
 export const SEED_CATEGORIES: readonly string[] = [
   'Nightshade',
   'Cucurbit',
@@ -78,6 +95,9 @@ export const SEED_CATEGORIES: readonly string[] = [
   'Root',
   'Leafy Green',
   'Herb',
+  'Fruit',
+  'Flower',
+  'Other',
 ];
 
 /** localStorage keys, namespaced under `hpt.` to avoid collisions. */
@@ -212,3 +232,19 @@ export type {
   IntegrationStatusBody,
   Tenderness,
 } from './homeAssistant.js';
+
+/**
+ * The plant catalogue, so nobody has to know botanical families to file a seed
+ * packet. Unlike everything above this line it is a runtime value, and it is
+ * for the **client only** — see the header of `plants.ts` for why importing it
+ * from `server/src` would crash the add-on on boot.
+ */
+export type { PlantCatalogueEntry, PlantMatch, PlantMatchConfidence } from './plants.js';
+export {
+  PLANT_CATALOGUE,
+  categoryForVariety,
+  matchPlant,
+  normalizePlantName,
+  plantLookupKeys,
+  searchPlants,
+} from './plants.js';
