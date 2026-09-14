@@ -1,5 +1,7 @@
+import { useId } from 'react';
 import { Leaf, RefreshCw, Ruler } from 'lucide-react';
 import type { GardenBed } from '../../types';
+import { SEED_CATEGORIES } from '../../types';
 import type { PlantingTally } from '../../lib/rotation';
 import { categoryLabel, getCategoryStyle, legendCategories } from '../../lib/rotation';
 
@@ -8,6 +10,8 @@ export interface BedContextPanelProps {
   tallies: PlantingTally[];
   plantedCount: number;
   conflictCount: number;
+  /** Records what grew here last season. This is the only way to change it. */
+  onLastYearCategoryChange: (category: string) => void;
 }
 
 /** At-a-glance detail for the selected bed, shown beside the grid. */
@@ -16,7 +20,9 @@ export function BedContextPanel({
   tallies,
   plantedCount,
   conflictCount,
+  onLastYearCategoryChange,
 }: BedContextPanelProps) {
+  const fieldId = useId();
   const totalSquares = bed.rows * bed.columns;
   const filledPercent = totalSquares === 0 ? 0 : Math.round((plantedCount / totalSquares) * 100);
   const categories = legendCategories(tallies);
@@ -85,6 +91,26 @@ export function BedContextPanel({
             Nothing recorded — this bed is treated as new ground, so no rotation flags apply.
           </p>
         )}
+
+        <label htmlFor={`${fieldId}-last-year`} className="mt-4 block text-xs font-semibold uppercase tracking-wide text-stone-500">
+          Change it
+        </label>
+        <select
+          id={`${fieldId}-last-year`}
+          value={bed.lastYearCategory}
+          onChange={(event) => onLastYearCategoryChange(event.target.value)}
+          className="mt-1.5 w-full rounded-xl border border-panel-edge bg-panel px-3 py-2 text-sm text-stone-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+        >
+          <option value="">Nothing recorded</option>
+          {SEED_CATEGORIES.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1.5 text-xs text-stone-500">
+          Worth updating at the end of each season — it is what the rotation flags compare against.
+        </p>
       </section>
 
       <section className="rounded-2xl border border-panel-edge bg-panel p-5 shadow-sm">

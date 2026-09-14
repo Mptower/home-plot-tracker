@@ -8,6 +8,13 @@
  * emerald (primary chrome and the active/hover state of a bed square), amber
  * (crop-rotation warnings) and rose (a stale seed packet).
  *
+ * `Other` is slate and `UNKNOWN_CATEGORY_STYLE` below is stone, which are the
+ * two closest neighbours in here. That is a considered pairing rather than an
+ * accident: the two states are genuinely adjacent in meaning — "filed under the
+ * catch-all" and "no crop family recorded" — and every swatch in the app is
+ * rendered next to its category name in text, so colour is reinforcement and
+ * never the only signal.
+ *
  * Every class string below is written out in full. Tailwind scans source text
  * literally, so a fragment like `bg-${hue}-100` is never emitted into the
  * stylesheet and the colour silently disappears from a production build.
@@ -72,6 +79,24 @@ const CATEGORY_STYLES: Record<string, CategoryStyle> = {
     swatch: 'bg-sky-400',
     chip: 'bg-sky-100 text-sky-800 ring-1 ring-inset ring-sky-300',
     badge: 'bg-sky-50 text-sky-700 ring-sky-200',
+  },
+  Fruit: {
+    cell: 'border-pink-300 bg-pink-100 text-pink-900 hover:bg-pink-200',
+    swatch: 'bg-pink-400',
+    chip: 'bg-pink-100 text-pink-800 ring-1 ring-inset ring-pink-300',
+    badge: 'bg-pink-50 text-pink-700 ring-pink-200',
+  },
+  Flower: {
+    cell: 'border-fuchsia-300 bg-fuchsia-100 text-fuchsia-900 hover:bg-fuchsia-200',
+    swatch: 'bg-fuchsia-400',
+    chip: 'bg-fuchsia-100 text-fuchsia-800 ring-1 ring-inset ring-fuchsia-300',
+    badge: 'bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200',
+  },
+  Other: {
+    cell: 'border-slate-300 bg-slate-100 text-slate-900 hover:bg-slate-200',
+    swatch: 'bg-slate-400',
+    chip: 'bg-slate-100 text-slate-800 ring-1 ring-inset ring-slate-300',
+    badge: 'bg-slate-50 text-slate-700 ring-slate-200',
   },
 };
 

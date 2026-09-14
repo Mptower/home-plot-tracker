@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.4.0
+
+You no longer have to know what botanical family a plant belongs to.
+
+- **The app knows the plants now.** Start typing a variety when you add a seed
+  packet — "jalap", "cherry tom", "rosemary" — and pick it from the list. The
+  category fills itself in. Around 170 common garden plants are in there:
+  peppers (bell, jalapeño, habanero, serrano, poblano, cayenne, banana, ghost,
+  shishito, Anaheim), tomatoes including the named heirlooms, a proper herb
+  shelf, the berries and the fruit, squashes, beans, brassicas, onions, roots
+  and the rest.
+- **You can still type anything you like.** Seed from a neighbour, an unlabelled
+  packet from a swap, a name only you use — all still fine. You just pick the
+  category yourself, exactly as before. And if the app fills one in and you
+  disagree, change it; your answer wins.
+- **Please check the Seed Vault after updating.** If anything on your shelf is
+  filed under a category the app thinks is wrong, you will see a blue note at
+  the top offering to fix it, and telling you what difference it makes. This
+  matters more than it sounds: the category is how the frost warning decides
+  whether a plant is at risk, so a tomato filed as a leafy green is treated as
+  frost-hardy and **you would not be warned about it**.
+- **Nothing was changed for you.** The update has not touched a single one of
+  your records. The blue note is an offer, and "Keep mine" makes it go away for
+  good. This was a deliberate decision: they are your records.
+- **Strawberries and the like are now covered.** There was no fruit category at
+  all before, which meant berries had no frost tenderness and were silently
+  left out of every warning. There are now three more categories — Fruit,
+  Flower and Other — so nothing common falls through the gap. Melons stay under
+  Cucurbit with the squashes, because that is the family they actually share
+  pests and diseases with.
+- **Planting a bed offers your own seeds first**, then the wider plant list
+  underneath. Anything planted from the wider list is marked as not being in
+  your vault, because frost warnings need a seed packet to work from.
+- **The harvest form suggests what you have actually planted**, not just what is
+  in the vault. If you have a packet called "Cherry Tomato" and you log the
+  picking as "Tomato", the season totals count them as two different plants —
+  this is how that stops happening.
+- **You can now change what grew in a bed last year.** That was only settable
+  when the bed was first created and there was no way to edit it afterwards,
+  which meant the crop rotation reminder had nothing to compare against for
+  most beds. It is in the bed details panel beside the grid.
+
 ## 0.3.0
 
 Frost settings move into the app.

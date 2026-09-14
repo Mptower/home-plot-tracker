@@ -2,9 +2,17 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, PackageOpen, Plus, SearchX, Sprout, X } from 'lucide-react';
 import type { SeedPacket, SeedVaultViewProps } from '../types';
 import { getGerminationEstimate } from '../lib/germination';
+import {
+  applyCategoryFix,
+  findCategoryFixes,
+  readDismissals,
+  writeDismissals,
+} from '../lib/categoryFix';
+import type { CategoryFix } from '../lib/categoryFix';
 import { ViewHeader } from './ViewHeader';
 import { ViewSummaryCard } from './ViewSummaryCard';
 import { AddSeedForm } from './seed-vault/AddSeedForm';
+import { CategoryFixBanner } from './seed-vault/CategoryFixBanner';
 import { SeedCard } from './seed-vault/SeedCard';
 import { SeedEmptyState } from './seed-vault/SeedEmptyState';
 import { ALL_CATEGORIES, SeedFilters } from './seed-vault/SeedFilters';
@@ -15,10 +23,25 @@ function matchesQuery(packet: SeedPacket, needle: string): boolean {
   );
 }
 
+/** `localStorage` when there is one. There is not, during SSR or in a test. */
+function browserStorage(): Storage | undefined {
+  return typeof window === 'undefined' ? undefined : window.localStorage;
+}
+
 export function SeedVaultView({ seeds, setSeeds }: SeedVaultViewProps) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  // Read once on mount. Dismissals are a per-device preference, so there is
+  // nothing to keep in step with the server and nothing to re-read.
+  const [dismissedFixes, setDismissedFixes] = useState<Set<string>>(() =>
+    readDismissals(browserStorage()),
+  );
+
+  const categoryFixes = useMemo(
+    () => findCategoryFixes(seeds, dismissedFixes),
+    [seeds, dismissedFixes],
+  );
 
   const categories = useMemo(
     () => Array.from(new Set(seeds.map((seed) => seed.category))).sort((a, b) => a.localeCompare(b)),
@@ -67,6 +90,26 @@ export function SeedVaultView({ seeds, setSeeds }: SeedVaultViewProps) {
     setCategory(ALL_CATEGORIES);
   }
 
+  /**
+   * Accepting a correction is an ordinary edit.
+   *
+   * It goes through the same `setSeeds` every other change goes through, so it
+   * syncs, and so undoing it is just editing the packet back — there is no
+   * special "corrected" state anywhere for her to get stuck in.
+   */
+  function handleApplyFix(fix: CategoryFix) {
+    setSeeds((previous) => applyCategoryFix(previous, fix));
+  }
+
+  function handleDismissFix(fix: CategoryFix) {
+    setDismissedFixes((previous) => {
+      const next = new Set(previous).add(fix.key);
+      writeDismissals(browserStorage(), next);
+
+      return next;
+    });
+  }
+
   return (
     <div className="space-y-6">
       <ViewHeader
@@ -86,6 +129,12 @@ export function SeedVaultView({ seeds, setSeeds }: SeedVaultViewProps) {
             : 'Germination is estimated from each packet\u2019s purchase year, so packets that have been on the shelf too long stand out. Nothing in the vault is past the three-year mark right now.'
         }
         stats={stats}
+      />
+
+      <CategoryFixBanner
+        fixes={categoryFixes}
+        onApply={handleApplyFix}
+        onDismiss={handleDismissFix}
       />
 
       {staleCount > 0 && (
@@ -117,7 +166,7 @@ export function SeedVaultView({ seeds, setSeeds }: SeedVaultViewProps) {
         </button>
       </div>
 
-      {isFormOpen && <AddSeedForm onAdd={handleAdd} onCancel={() => setIsFormOpen(false)} />}
+      {isFormOpen && <AddSeedForm onAdd={handleAdd} onCancel={() => setIsFormOpen(false)} seeds={seeds} />}
 
       {seeds.length > 0 && (
         <SeedFilters

@@ -1,13 +1,16 @@
-import { useId, useState } from 'react';
-import { Sprout, X } from 'lucide-react';
+import { useId, useMemo, useState } from 'react';
+import { Sprout, Wand2, X } from 'lucide-react';
 import type { FormEvent } from 'react';
 import type { SeedPacket } from '../../types';
-import { SEED_CATEGORIES } from '../../types';
+import { categoryForVariety, SEED_CATEGORIES } from '../../types';
 import { createId } from '../../lib/id';
+import { PlantCombobox } from '../PlantCombobox';
 
 export interface AddSeedFormProps {
   onAdd: (packet: SeedPacket) => void;
   onCancel: () => void;
+  /** Packets she already owns, offered ahead of the catalogue while she types. */
+  seeds?: readonly SeedPacket[];
 }
 
 interface FormErrors {
@@ -22,17 +25,35 @@ const labelClasses = 'block text-xs font-semibold uppercase tracking-wide text-s
 const fieldClasses =
   'mt-1.5 w-full rounded-xl border border-panel-edge bg-panel px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30';
 
-export function AddSeedForm({ onAdd, onCancel }: AddSeedFormProps) {
+export function AddSeedForm({ onAdd, onCancel, seeds = [] }: AddSeedFormProps) {
   const fieldId = useId();
   const currentYear = new Date().getFullYear();
   const latestPurchaseYear = currentYear + 1;
 
   const [variety, setVariety] = useState('');
-  const [category, setCategory] = useState('');
+  const [categoryOverride, setCategoryOverride] = useState<string | null>(null);
   const [brand, setBrand] = useState('');
   const [purchaseYear, setPurchaseYear] = useState(String(currentYear));
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<FormErrors>({});
+
+  /**
+   * What the catalogue makes of whatever is currently in the variety box.
+   *
+   * This runs on free text too, not just on picked suggestions, so typing
+   * "Cherry Tomato" by hand fills in Nightshade exactly as picking it would.
+   */
+  const suggestedCategory = useMemo(() => categoryForVariety(variety), [variety]);
+
+  /**
+   * The category is derived until she says otherwise, and hers from then on.
+   *
+   * That is the whole decision in one line: she is never *asked* for a family,
+   * but the select is a real select and the moment she touches it her answer
+   * wins and stops being recalculated underneath her.
+   */
+  const category = categoryOverride ?? suggestedCategory ?? '';
+  const isOverridden = categoryOverride !== null && suggestedCategory !== null && categoryOverride !== suggestedCategory;
 
   function validate(): FormErrors {
     const nextErrors: FormErrors = {};
@@ -72,7 +93,7 @@ export function AddSeedForm({ onAdd, onCancel }: AddSeedFormProps) {
     });
 
     setVariety('');
-    setCategory('');
+    setCategoryOverride(null);
     setBrand('');
     setPurchaseYear(String(currentYear));
     setNotes('');
@@ -115,20 +136,30 @@ export function AddSeedForm({ onAdd, onCancel }: AddSeedFormProps) {
           <label htmlFor={`${fieldId}-variety`} className={labelClasses}>
             Variety
           </label>
-          <input
+          <PlantCombobox
             id={`${fieldId}-variety`}
-            type="text"
             value={variety}
-            onChange={(event) => setVariety(event.target.value)}
+            onChange={setVariety}
+            onPick={(suggestion) => {
+              setVariety(suggestion.variety);
+              // Taking a suggestion is an answer about the family too, so it
+              // replaces any earlier override rather than being outvoted by it.
+              setCategoryOverride(suggestion.category);
+            }}
+            seeds={seeds}
             placeholder="Cherokee Purple"
-            aria-required="true"
-            aria-invalid={errors.variety !== undefined}
-            aria-describedby={errors.variety ? `${fieldId}-variety-error` : undefined}
+            required
+            invalid={errors.variety !== undefined}
+            describedBy={errors.variety ? `${fieldId}-variety-error` : undefined}
             className={fieldClasses}
           />
-          {errors.variety && (
+          {errors.variety ? (
             <p id={`${fieldId}-variety-error`} className="mt-1.5 text-xs font-medium text-rose-600">
               {errors.variety}
+            </p>
+          ) : (
+            <p className="mt-1.5 text-xs text-stone-500">
+              Start typing and pick from the list — the category fills itself in.
             </p>
           )}
         </div>
@@ -140,7 +171,7 @@ export function AddSeedForm({ onAdd, onCancel }: AddSeedFormProps) {
           <select
             id={`${fieldId}-category`}
             value={category}
-            onChange={(event) => setCategory(event.target.value)}
+            onChange={(event) => setCategoryOverride(event.target.value)}
             aria-required="true"
             aria-invalid={errors.category !== undefined}
             aria-describedby={errors.category ? `${fieldId}-category-error` : undefined}
@@ -156,6 +187,27 @@ export function AddSeedForm({ onAdd, onCancel }: AddSeedFormProps) {
           {errors.category && (
             <p id={`${fieldId}-category-error`} className="mt-1.5 text-xs font-medium text-rose-600">
               {errors.category}
+            </p>
+          )}
+          {!errors.category && isOverridden && (
+            <p className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-stone-500">
+              <Wand2 className="h-3.5 w-3.5 shrink-0 text-stone-400" aria-hidden="true" />
+              <span>
+                Usually a <span className="font-semibold text-stone-700">{suggestedCategory}</span>.
+              </span>
+              <button
+                type="button"
+                onClick={() => setCategoryOverride(null)}
+                className="rounded font-semibold text-emerald-700 underline decoration-dotted underline-offset-2 transition-colors hover:text-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+              >
+                Use that instead
+              </button>
+            </p>
+          )}
+          {!errors.category && !isOverridden && suggestedCategory !== null && (
+            <p className="mt-1.5 flex items-center gap-1.5 text-xs text-stone-500">
+              <Wand2 className="h-3.5 w-3.5 shrink-0 text-stone-400" aria-hidden="true" />
+              Filled in from the plant list. Change it if you disagree.
             </p>
           )}
         </div>

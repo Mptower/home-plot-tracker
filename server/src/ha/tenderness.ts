@@ -25,6 +25,17 @@ import type { Tenderness } from '@hpt/shared';
  * `tender` because basil is the herb people actually lose, and being warned
  * about a hardy rosemary costs nothing next to losing the basil.
  *
+ * `Fruit` deliberately holds only hardy perennial fruit — strawberries,
+ * brambles, currants, grapes, rhubarb. Melons are `Cucurbit`, which is what
+ * they botanically are, so this category never has to answer for both a
+ * strawberry and a watermelon at once. See `shared/src/plants.ts`.
+ *
+ * `Other` is `tender` both because its members are (corn, okra, sweet potato,
+ * celery) and because tender is the safe default for a catch-all: over-warning
+ * costs a bedsheet, under-warning costs the crop. It is not the same as having
+ * no category — an uncategorised planting is still `unknown` and still raises
+ * nothing.
+ *
  * Null-prototype, because the keys are variety categories that ultimately come
  * from user input. With an ordinary object literal, a square planted with
  * something called "constructor" or "toString" would find an inherited property
@@ -37,10 +48,13 @@ export const CATEGORY_TENDERNESS: Readonly<Record<string, Tenderness>> = Object.
     Cucurbit: 'tender',
     Legume: 'tender',
     Herb: 'tender',
+    Flower: 'tender',
+    Other: 'tender',
     Brassica: 'hardy',
     Allium: 'hardy',
     Root: 'hardy',
     'Leafy Green': 'hardy',
+    Fruit: 'hardy',
   } satisfies Record<string, Tenderness>,
 );
 

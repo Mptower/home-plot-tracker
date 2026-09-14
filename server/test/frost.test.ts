@@ -52,6 +52,22 @@ test('tenderness maps the families a gardener would expect', () => {
   assert.equal(tendernessOf('Leafy Green'), 'hardy');
 });
 
+test('the three newer categories are each coherent about the cold', () => {
+  // `Fruit` holds only hardy perennial fruit — strawberries, brambles, currants,
+  // grapes, rhubarb. Melons are `Cucurbit`, which is what they botanically are,
+  // so this category never has to answer for a strawberry and a watermelon at
+  // once. That is the whole reason it can have a single honest tenderness.
+  assert.equal(tendernessOf('Fruit'), 'hardy');
+
+  // Marigolds, nasturtiums, zinnias: the common companion plants are all tender
+  // annuals.
+  assert.equal(tendernessOf('Flower'), 'tender');
+
+  // Corn, okra, sweet potato, celery. Tender in fact, and tender is also the
+  // safe default for a catch-all: over-warning costs a bedsheet.
+  assert.equal(tendernessOf('Other'), 'tender');
+});
+
 test('an unrecorded or unheard-of category is unknown, never a guess', () => {
   assert.equal(tendernessOf('Brambles'), 'unknown');
   assert.equal(tendernessOf(''), 'unknown');
@@ -369,4 +385,103 @@ test('the forecast is found wherever the service response nests it', () => {
   );
   assert.deepEqual(extractForecast({}, 'weather.forecast_home'), []);
   assert.deepEqual(extractForecast(null, 'weather.forecast_home'), []);
+});
+
+/**
+ * The bug this whole feature exists to fix, as it actually sat in her database.
+ *
+ * She filed a cherry tomato as a Leafy Green — a completely reasonable thing to
+ * do, because it has leaves and nobody holding a seed packet thinks
+ * "nightshade". The code then did exactly what it was told: `Leafy Green` is
+ * hardy, so the frost engine had nothing to warn her about, four weeks out from
+ * first frost.
+ *
+ * Nothing here can stop her typing a category by hand. What the catalogue does
+ * is stop her having to, and offer to fix the rows already filed wrong. These
+ * two cases are what "fixed" and "broken" look like from the server's side.
+ */
+const HER_BED = bed({
+  id: 'bed_tomato',
+  name: 'Tomato bed',
+  rows: 3,
+  columns: 6,
+  lastYearCategory: '',
+  layout: [
+    ['Cherry Tomato', null, null, null, null, null],
+    [null, null, null, null, null, null],
+    [null, null, null, null, null, null],
+  ],
+});
+
+/** A night at 34°F: below the 36°F advisory band, above the 32°F frost band. */
+const HER_FORECAST = [point(ahead(1), 34, 'hour')];
+
+test('her tomato filed as a Leafy Green raises nothing, which is the defect', () => {
+  const watch = assessFrostRisk({
+    forecast: HER_FORECAST,
+    beds: [HER_BED],
+    seeds: [seed({ id: 'seed_cherry_tomato', variety: 'Cherry Tomato', category: 'Leafy Green' })],
+    observedAt: NOW.toISOString(),
+    now: NOW,
+  });
+
+  // The cold is seen and reported honestly, but nothing planted is believed to
+  // mind it, so she is never told and the tomatoes are lost.
+  assert.equal(watch?.severity, 'none');
+  assert.deepEqual(watch?.bedsAtRisk, []);
+  assert.deepEqual(watch?.tenderVarieties, []);
+});
+
+test('the same tomato filed as a Nightshade names her bed', () => {
+  const watch = assessFrostRisk({
+    forecast: HER_FORECAST,
+    beds: [HER_BED],
+    seeds: [seed({ id: 'seed_cherry_tomato', variety: 'Cherry Tomato', category: 'Nightshade' })],
+    observedAt: NOW.toISOString(),
+    now: NOW,
+  });
+
+  assert.equal(watch?.severity, 'advisory');
+  assert.deepEqual(watch?.tenderVarieties, ['Cherry Tomato']);
+  assert.equal(watch?.bedsAtRisk.length, 1);
+  assert.equal(watch?.bedsAtRisk[0]?.bedName, 'Tomato bed');
+});
+
+test('a strawberry bed stays quiet while a melon bed does not', () => {
+  // The two halves of the fruit problem, resolved by putting them in different
+  // families rather than by giving one of them a special case.
+  const watch = assessFrostRisk({
+    forecast: HER_FORECAST,
+    beds: [
+      bed({
+        id: 'bed_berries',
+        name: 'Berry patch',
+        rows: 1,
+        columns: 1,
+        layout: [['Strawberry']],
+        lastYearCategory: '',
+      }),
+      bed({
+        id: 'bed_melons',
+        name: 'Melon patch',
+        rows: 1,
+        columns: 1,
+        layout: [['Sugar Baby Watermelon']],
+        lastYearCategory: '',
+      }),
+    ],
+    seeds: [
+      seed({ id: 'seed_strawberry', variety: 'Strawberry', category: 'Fruit' }),
+      seed({ id: 'seed_watermelon', variety: 'Sugar Baby Watermelon', category: 'Cucurbit' }),
+    ],
+    observedAt: NOW.toISOString(),
+    now: NOW,
+  });
+
+  assert.equal(watch?.severity, 'advisory');
+  assert.deepEqual(
+    watch?.bedsAtRisk.map((atRisk) => atRisk.bedName),
+    ['Melon patch'],
+  );
+  assert.deepEqual(watch?.tenderVarieties, ['Sugar Baby Watermelon']);
 });

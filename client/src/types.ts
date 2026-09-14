@@ -24,12 +24,23 @@ export type {
   HarvestLog,
   HomeAssistantBody,
   IntegrationStatusBody,
+  PlantCatalogueEntry,
+  PlantMatch,
   SeedPacket,
   Tenderness,
   ViewId,
 } from '@hpt/shared';
 
-export { COLLECTION_NAMES, SEED_CATEGORIES, STORAGE_KEYS } from '@hpt/shared';
+export {
+  categoryForVariety,
+  COLLECTION_NAMES,
+  matchPlant,
+  normalizePlantName,
+  PLANT_CATALOGUE,
+  searchPlants,
+  SEED_CATEGORIES,
+  STORAGE_KEYS,
+} from '@hpt/shared';
 
 export interface SeedVaultViewProps {
   seeds: SeedPacket[];
@@ -46,6 +57,8 @@ export interface HarvestLogViewProps {
   harvests: HarvestLog[];
   setHarvests: Dispatch<SetStateAction<HarvestLog[]>>;
   seeds: SeedPacket[];
+  /** Read-only: what is actually growing, so the variety field can suggest it. */
+  beds: GardenBed[];
 }
 
 export interface SidebarProps {
