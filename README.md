@@ -37,16 +37,24 @@ addon/     the Home Assistant add-on
 exactly the shapes the client renders. It builds to `dist/` with declarations,
 which is why every root script builds it first.
 
-**`shared/` is types only, and this is load-bearing.** Everything the server
-imports from it is an `import type`, which TypeScript erases at compile time.
-The add-on image vendors a flattened copy of `server/dist/src` with `express` as
-its only dependency and no `@hpt/shared` on disk at all — so a *value* imported
-from `shared/` would pass typecheck, pass the tests, run fine under
-`npm run dev`, and then crash the add-on on boot with `ERR_MODULE_NOT_FOUND`.
-Shared runtime logic belongs in `server/src/`; `shared/` gets the type that
-describes it. The frost model is the worked example: the wire types are in
+**`shared/` is types only *for the server*, and this is load-bearing.**
+Everything `server/src` imports from it is an `import type`, which TypeScript
+erases at compile time. The add-on image vendors a flattened copy of
+`server/dist/src` with `express` as its only dependency and no `@hpt/shared` on
+disk at all — so a *value* imported from `shared/` into the server would pass
+typecheck, pass the tests, run fine under `npm run dev`, and then crash the
+add-on on boot with `ERR_MODULE_NOT_FOUND`. Server-side runtime logic belongs in
+`server/src/`; `shared/` gets the type that describes it. The frost model is the
+worked example: the wire types are in
 [`shared/src/homeAssistant.ts`](shared/src/homeAssistant.ts) and the logic that
 produces them is in [`server/src/ha/`](server/src/ha/).
+
+`shared/` does carry runtime values for the **client**, which is bundled by Vite
+and has no such constraint — the plant catalogue in
+[`shared/src/plants.ts`](shared/src/plants.ts) is the main one.
+[`server/test/shared-imports.test.ts`](server/test/shared-imports.test.ts)
+enforces the boundary by failing the build if any `server/src` file imports the
+package as anything other than a type.
 
 React-specific prop contracts (`SeedVaultViewProps` and friends) stay in
 [`client/src/types.ts`](client/src/types.ts), which re-exports the shared types
@@ -538,13 +546,31 @@ A warning names what is actually planted. Every seed packet carries a
 
 | Tenderness | Categories                                       |
 | ---------- | ------------------------------------------------ |
-| `tender`   | Nightshade, Cucurbit, Legume, Herb               |
-| `hardy`    | Brassica, Allium, Root, Leafy Green              |
+| `tender`   | Nightshade, Cucurbit, Legume, Herb, Flower, Other |
+| `hardy`    | Brassica, Allium, Root, Leafy Green, Fruit       |
 | `unknown`  | anything else                                    |
 
 `Herb` is the one real compromise: it covers basil, which collapses at 40 °F,
 and rosemary, which is fine under snow. It is mapped `tender` because basil is
 the herb people actually lose.
+
+The categories are **crop families**, not supermarket aisles, and each one is
+chosen so it can answer the cold question with a single value. That is why
+there is no per-variety override: melons are `Cucurbit` because that is what
+they botanically are, a ground cherry is a `Nightshade` because it is a
+*Physalis*, and `Fruit` is left holding only hardy perennial fruit —
+strawberries, brambles, currants, grapes, rhubarb — so it never has to answer
+for a strawberry and a watermelon at once. `Other` is `tender` both because its
+members are (corn, okra, sweet potato, celery) and because tender is the safe
+default for a catch-all: over-warning costs a bedsheet, under-warning costs the
+crop.
+
+The map lives in [`server/src/ha/tenderness.ts`](server/src/ha/tenderness.ts),
+with a browser copy in [`shared/src/tenderness.ts`](shared/src/tenderness.ts)
+so the Seed Vault can explain why a miscategorised packet matters. The two are
+held together by `server/test/tenderness-parity.test.ts`, which fails if they
+drift. The duplication exists because the server cannot import `@hpt/shared` at
+runtime — see [How the add-on is put together](#how-the-add-on-is-put-together).
 
 An unrecognised category is **never guessed at**. It cannot trigger a warning,
 but it is counted and shown, so the banner says "3 squares have no crop family
@@ -762,7 +788,9 @@ HTTP and SQLite rather than mocks of them. Coverage:
 | `import.test.ts`        | the emptiness guard, reported counts, partial payloads      |
 | `transactions.test.ts`  | a failed write leaving the previous collection intact       |
 | `static.test.ts`        | cache headers, SPA fallback, mounting under a prefix        |
-| `frost.test.ts`         | the tenderness map, the three bands, which night a low belongs to |
+| `frost.test.ts`         | the tenderness map, the three bands, which night a low belongs to, and the miscategorised-tomato regression |
+| `tenderness-parity.test.ts` | the server's tenderness map and the browser's copy agreeing |
+| `shared-imports.test.ts` | no `server/src` file importing `@hpt/shared` as a runtime value |
 | `ha-sensors.test.ts`    | the exact published payloads, rounding, the collision guard |
 | `ha-notify.test.ts`     | one per snap, escalation, quiet hours, surviving a restart   |
 | `ha-absent.test.ts`     | no Home Assistant at all: no client, no timers, no sockets   |
@@ -775,6 +803,19 @@ The Home Assistant tests run against a fake Supervisor
 which is what makes the interesting rules testable at all — and means the suite
 never opens a socket to anything. `ha-absent.test.ts` proves the degrade path by
 wiring the fake in *without* a token and then asserting its call log is empty.
+
+The client suite is plain `node:test` with **no DOM and no React testing
+library**, so a component cannot be rendered in a test. Anything that could
+plausibly be wrong therefore lives in a pure module rather than in a component:
+
+| File                      | Covers                                                    |
+| ------------------------- | --------------------------------------------------------- |
+| `merge.test.ts`           | the item-level three-way merge                             |
+| `settings.test.ts`        | quiet-hours wording and validation                         |
+| `plants.test.ts`          | the catalogue and the matcher, including every ambiguous name it has to survive |
+| `plantSuggest.test.ts`    | suggestion ordering, deduplication across spellings, limits, arrow-key wrap |
+| `categoryFix.test.ts`     | which packets are queried, the exact-match rule, dismissals, and never mutating her data |
+| `harvest.test.ts`         | variety options drawn from vault, beds and log alike       |
 
 ## Migration phases
 
@@ -835,7 +876,18 @@ type ViewId = 'planner' | 'vault' | 'harvest';
 
 - `SEED_CATEGORIES: readonly string[]` — the canonical category list
   (`Nightshade`, `Cucurbit`, `Brassica`, `Allium`, `Legume`, `Root`,
-  `Leafy Green`, `Herb`). Every category dropdown reads from this list.
+  `Leafy Green`, `Herb`, `Fruit`, `Flower`, `Other`). Every category dropdown
+  reads from this list. Adding one has three obligations, all of them enforced
+  by something that fails: a tenderness in `server/src/ha/tenderness.ts` *and*
+  its browser copy in `shared/src/tenderness.ts`, a colour in
+  `client/src/lib/categoryTheme.ts`, and nothing else — the three dropdowns all
+  read the list directly.
+- `PLANT_CATALOGUE` and the matcher (`matchPlant`, `categoryForVariety`,
+  `searchPlants`) from [`shared/src/plants.ts`](shared/src/plants.ts) — around
+  170 common garden plants mapped to their crop family, so the category is
+  derived from the variety she typed rather than asked for. **Client-only**: a
+  runtime import from `server/src` would crash the add-on on boot, and
+  `server/test/shared-imports.test.ts` fails the build if one appears.
 - `STORAGE_KEYS` — the `localStorage` key map (see below).
 - `COLLECTION_NAMES` and `GardenSnapshot`, used by the API and the import
   endpoint.
@@ -854,7 +906,8 @@ Squares are tinted by the crop family of whatever is planted, so a bed is
 readable at a glance, and a variety that is no longer in the vault degrades to a
 neutral "Uncatalogued" square rather than breaking the grid.
 
-**Crop rotation warnings.** Every bed remembers `lastYearCategory`. Whenever the
+**Crop rotation warnings.** Every bed remembers `lastYearCategory`, editable
+from the bed detail panel beside the grid. Whenever the
 current layout holds anything from that same family, an amber banner names the
 family dynamically — _"Crop Rotation Warning: Nightshades planted here last
 year!"_ — and each offending square picks up an amber ring. The check runs over
@@ -862,7 +915,32 @@ committed state rather than the click that caused it, so the warning survives a
 reload. It is advice, never a block: planting is always allowed. Dismissing it
 hides that exact conflict set, and creating a new conflict brings it back.
 
+**Planting a square.** Click a square and the picker offers her own vault first,
+grouped by family, because planting what you already own is the common case.
+Underneath, the wider plant catalogue matches whatever she typed, shown with a
+dashed edge and a note saying frost warnings need a seed packet — the frost
+engine resolves a bed square by exact variety name against the vault, so a
+square planted from the catalogue alone has no family and raises nothing.
+
 ### 🗃️ Seed Vault
+
+Adding a packet starts with a searchable plant field. Type "jalap", pick
+Jalapeño, and the category fills itself in as Nightshade. The category select is
+still a select: the moment she touches it her answer wins and stops being
+recalculated, and a one-line hint offers the catalogue's opinion back if the two
+disagree. A variety the catalogue has never heard of is still perfectly valid —
+she just picks the family herself, as before.
+
+**Category corrections.** When the catalogue recognises a variety outright and
+the stored category disagrees, an indigo banner offers a one-click fix, naming
+the consequence rather than the taxonomy: _"Leafy Green is treated as
+frost-hardy, so you are not being warned about this one. Nightshade is tender."_
+Fixes that change the frost advice sort first. Nothing is ever rewritten
+automatically and there is no upgrade migration — the records are hers, and
+"Keep mine" is remembered per device. Corrections are offered only on exact
+catalogue matches, a deliberately narrower rule than the autofill uses:
+"Chocolate Cherry" is a cherry tomato, and a substring match would offer to
+"correct" it into a berry.
 
 A card grid of every packet with search and category filters. Each card
 estimates viability from `purchaseYear`: 95% for a packet bought this season,
@@ -876,8 +954,12 @@ replacing" count. and is pure, with the current year injectable for testing. The
 
 A split pane: a sticky quick-entry form on the left, the historical feed on the
 right. The form keeps the date between submissions so a single picking session
-is fast to record, and suggests varieties from the vault plus anything typed
-before. The feed sorts newest first and groups entries under day headers with
+is fast to record, and suggests varieties from the vault, from whatever is
+actually planted in a bed, and from anything typed before. Suggesting what is
+growing is half the cure for a real fragmentation: a packet filed as "Cherry
+Tomato" and a harvest logged as "Tomato" are two free-text strings that never
+meet, so the season totals count one plant as two. Free text still works. The
+feed sorts newest first and groups entries under day headers with
 per-day subtotals, above a season summary of total weight, items, days logged
 and the top varieties by weight.
 
@@ -928,7 +1010,9 @@ everywhere.
 Three hues are deliberately excluded from that palette because they carry
 meaning elsewhere and would be ambiguous next to a category: **emerald**
 (primary chrome and a bed square's active/hover state), **amber** (rotation
-warnings) and **rose** (a stale packet).
+warnings) and **rose** (a stale packet). **Indigo** is likewise kept out of it,
+because the category-correction banner in the Seed Vault uses it and a banner
+should never read as a family chip.
 
 Class strings are written out in full. Tailwind scans source text literally, so
 a constructed name like `` `bg-${hue}-100` `` never reaches the stylesheet and
@@ -945,6 +1029,13 @@ pre-server builds wrote, and what `POST /api/import` exists to ingest:
 | `hpt.beds`          | `GardenBed[]`                       |
 | `hpt.harvests`      | `HarvestLog[]`                      |
 | `hpt.serverImport`  | when the copy across was confirmed  |
+| `hpt.dismissedCategoryFixes` | category corrections waved away |
+
+`hpt.dismissedCategoryFixes` is the odd one out: a preference rather than a
+record. It holds no garden data, is never synced, and losing it costs nothing
+worse than being offered a correction that has already been declined. It is
+per-device on purpose — dismissing a nudge on a phone is not a statement about
+the tablet in the shed.
 
 [`client/src/lib/localSnapshot.ts`](client/src/lib/localSnapshot.ts) reads the
 first three by key, so it keeps working now that `useLocalStorage` is gone. On
@@ -1034,6 +1125,8 @@ Shared building blocks:
 
 ```
 shared/src/index.ts               domain types + constants, the contract
+shared/src/plants.ts              the plant catalogue + matcher (client-only)
+shared/src/tenderness.ts          browser copy of the frost tenderness map
 shared/src/homeAssistant.ts       the frost wire types (types only — see above)
 
 client/
@@ -1055,6 +1148,8 @@ client/
     │   ├── id.ts                 createId helper
     │   ├── seedData.ts           DEFAULT_SEEDS / DEFAULT_BEDS / DEFAULT_HARVESTS
     │   ├── categoryTheme.ts      shared crop-family colour palette
+    │   ├── categoryFix.ts        finds miscategorised packets, applies opt-in fixes
+    │   ├── plantSuggest.ts       variety suggestions: her vault first, then catalogue
     │   ├── germination.ts        seed-age and viability estimates
     │   ├── frostWatch.ts         reads /api/home-assistant, null on any failure
     │   ├── settings.ts           quiet-hours wording and validation, all pure
