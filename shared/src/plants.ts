@@ -81,6 +81,7 @@ export const PLANT_CATALOGUE: readonly PlantCatalogueEntry[] = [
   { name: 'Black Krim', category: 'Nightshade' },
   // A "black cherry" is a tomato, not stone fruit.
   { name: 'Black Cherry', category: 'Nightshade' },
+  { name: 'Chocolate Cherry', category: 'Nightshade' },
   { name: 'Yellow Pear', category: 'Nightshade' },
   { name: 'Amish Paste', category: 'Nightshade' },
   { name: 'Celebrity', category: 'Nightshade' },

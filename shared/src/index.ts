@@ -105,6 +105,16 @@ export const STORAGE_KEYS = {
   seeds: 'hpt.seeds',
   beds: 'hpt.beds',
   harvests: 'hpt.harvests',
+  /**
+   * Which category corrections she has waved away.
+   *
+   * Unlike the three above this is a preference, not a record: it holds no
+   * garden data, it is never synced to the server, and losing it costs her
+   * nothing worse than being offered a correction she has already declined.
+   * Per-device on purpose — dismissing a nudge on her phone is not a statement
+   * about what the tablet in the shed should show.
+   */
+  dismissedCategoryFixes: 'hpt.dismissedCategoryFixes',
 } as const;
 
 /** The three collections the API exposes. */
@@ -248,3 +258,17 @@ export {
   plantLookupKeys,
   searchPlants,
 } from './plants.js';
+
+/**
+ * Cold tolerance per crop family, for the **client only**.
+ *
+ * A browser-side copy of `server/src/ha/tenderness.ts`, kept honest by
+ * `server/test/tenderness-parity.test.ts`. The server must keep importing its
+ * own, for the same packaging reason the catalogue carries — see the header of
+ * `tenderness.ts` next door. The names are prefixed so nothing on the server
+ * can reach for one of these by muscle memory and get a boot crash.
+ */
+export {
+  CATEGORY_TENDERNESS as CLIENT_CATEGORY_TENDERNESS,
+  tendernessOf as clientTendernessOf,
+} from './tenderness.js';
