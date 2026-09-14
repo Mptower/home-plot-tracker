@@ -73,6 +73,11 @@ function watch(overrides: Partial<FrostWatch> = {}): FrostWatch {
   };
 }
 
+/** One bed's worth of plantings, for the wording tests. */
+function bed(bedName: string, tender: string[], hardy: string[] = []) {
+  return { bedId: bedName, bedName, tender, hardy, unknown: [] };
+}
+
 /** Midday, so quiet hours are never accidentally in play. */
 const NOON = new Date(2026, 9, 9, 12);
 
@@ -89,6 +94,8 @@ test('a frost with something tender planted is announced', () => {
     assert.match(decision.message, /Bed 1 - Raised/);
     // And the reassuring half.
     assert.match(decision.message, /Lacinato Kale/);
+    // Lock screens truncate, so the instruction has to come first.
+    assert.match(decision.message, /^Cover your Cherokee Purple/);
   } finally {
     cleanup(db, dir);
   }
@@ -381,16 +388,24 @@ test('nights are described the way she would say them', () => {
 test('the message admits to squares it cannot classify', () => {
   const composed = composeNotification(watch({ unknownSquareCount: 3 }), NOON);
 
-  assert.match(composed.message, /3 squares have no crop family recorded/);
+  assert.match(composed.message, /3 squares don't have a plant recorded, so they're not included\./);
+});
+
+test('one unrecorded square is admitted in the singular', () => {
+  const composed = composeNotification(watch({ unknownSquareCount: 1 }), NOON);
+
+  assert.match(composed.message, /1 square doesn't have a plant recorded, so it's not included\./);
 });
 
 test('the message names the hour only when the forecast was hourly', () => {
   const hourly = composeNotification(watch({ precision: 'hour' }), NOON);
-  assert.match(hourly.message, /Coldest around/);
+  assert.match(hourly.message, /coldest around/);
 
   // A daily forecast carries no hour, so inventing one would be a lie.
   const daily = composeNotification(watch({ precision: 'day' }), NOON);
-  assert.doesNotMatch(daily.message, /Coldest around/);
+  assert.doesNotMatch(daily.message, /coldest around/i);
+  // And what is left still has to be a finished sentence.
+  assert.match(daily.message, /\.$/);
 });
 
 test('a long variety list is summarised rather than dumped', () => {
@@ -402,6 +417,251 @@ test('a long variety list is summarised rather than dumped', () => {
   );
 
   assert.match(composed.message, /and 2 more/);
+  // Never "A, B and C and 2 more" — two `and`s in one list is where it stopped
+  // sounding like a person.
+  assert.match(composed.message, /A, B, C and 2 more/);
+});
+
+/**
+ * The voice.
+ *
+ * She asked for wording that "flows better and is more normal", which came down
+ * to three things: lead with the thing to actually go and do, drop the botany,
+ * and write whole sentences. The tests below pin each of those, because prose
+ * with nothing asserting it drifts back.
+ */
+
+test('the message says what to do before it says anything else', () => {
+  const composed = composeNotification(watch(), NOON);
+
+  assert.match(composed.message, /^Cover your /);
+});
+
+test('one bed is named inline and the dash is spent on the hour', () => {
+  const composed = composeNotification(
+    watch({
+      tenderVarieties: ['Cherokee Purple', 'Jalapeño'],
+      bedsAtRisk: [bed('Tomato bed', ['Cherokee Purple', 'Jalapeño'])],
+      hardyVarieties: [],
+    }),
+    NOON,
+  );
+
+  assert.equal(
+    composed.message,
+    "Cover your Cherokee Purple and Jalapeño in Tomato bed — it'll be coldest around 5am.",
+  );
+});
+
+test('two beds are split off with the dash, so the two lists cannot collide', () => {
+  const composed = composeNotification(
+    watch({
+      tenderVarieties: ['Cherokee Purple', 'Jalapeño', 'Basil'],
+      hardyVarieties: ['Lacinato Kale'],
+      bedsAtRisk: [
+        bed('Tomato bed', ['Cherokee Purple', 'Jalapeño']),
+        bed('Bed 2', ['Basil'], ['Lacinato Kale']),
+      ],
+    }),
+    NOON,
+  );
+
+  // The old wording ran the crops and the beds into one sentence joined by two
+  // `and`s — "Cherokee Purple, Jalapeño and Basil in Tomato bed and Bed 2".
+  assert.equal(
+    composed.message,
+    'Cover your Cherokee Purple, Jalapeño and Basil — ' +
+      "they're in Tomato bed and Bed 2. It'll be coldest around 5am. " +
+      'The Lacinato Kale should be fine.',
+  );
+
+  // At most one dash, whichever job it is doing.
+  assert.equal(composed.message.split('—').length - 1, 1);
+});
+
+test('one crop in two beds still agrees with itself', () => {
+  const composed = composeNotification(
+    watch({
+      tenderVarieties: ['Cherokee Purple'],
+      hardyVarieties: [],
+      bedsAtRisk: [bed('Tomato bed', ['Cherokee Purple']), bed('Bed 2', ['Cherokee Purple'])],
+    }),
+    NOON,
+  );
+
+  assert.match(composed.message, /— it's in Tomato bed and Bed 2\./);
+});
+
+test('four beds are counted rather than listed', () => {
+  const composed = composeNotification(
+    watch({
+      tenderVarieties: ['Cherokee Purple', 'Jalapeño'],
+      hardyVarieties: [],
+      bedsAtRisk: [
+        bed('Tomato bed', ['Cherokee Purple']),
+        bed('Bed 2', ['Jalapeño']),
+        bed('Bed 3', ['Jalapeño']),
+        bed('Herb spiral', ['Jalapeño']),
+      ],
+    }),
+    NOON,
+  );
+
+  // At four beds the names stop being actionable and "Bed 3 and 1 more" is
+  // just noise on a lock screen.
+  assert.match(composed.message, /they're spread across 4 beds\./);
+  assert.doesNotMatch(composed.message, /Herb spiral/);
+});
+
+test('no bed at all still reads as a sentence', () => {
+  // The old wording said "Cherokee Purple are tender." here.
+  const composed = composeNotification(
+    watch({ bedsAtRisk: [], hardyVarieties: [] }),
+    NOON,
+  );
+
+  assert.equal(composed.message, "Cover your Cherokee Purple — it'll be coldest around 5am.");
+});
+
+test('a hard freeze does not tell her to cover what a cover cannot save', () => {
+  const composed = composeNotification(watch({ severity: 'hard_freeze', lowF: 24 }), NOON);
+
+  assert.doesNotMatch(composed.message, /Cover your/);
+  assert.match(composed.message, /^Pick what you can from your Cherokee Purple in Bed 1 - Raised/);
+  // And says why, so the changed instruction does not look arbitrary.
+  assert.match(composed.message, /A cover won't be enough this cold\./);
+  // At 24°F the kale is no longer "fine" either.
+  assert.match(composed.message, /Even the Lacinato Kale may take damage\./);
+  assert.doesNotMatch(composed.message, /should be fine/);
+});
+
+test('a hard freeze with only hardy crops has no instruction to give, and gives none', () => {
+  const composed = composeNotification(
+    watch({
+      severity: 'hard_freeze',
+      lowF: 24,
+      tenderVarieties: [],
+      hardyVarieties: ['Lacinato Kale', 'Carrots'],
+      bedsAtRisk: [bed('Kale bed', [], ['Lacinato Kale', 'Carrots'])],
+    }),
+    NOON,
+  );
+
+  assert.equal(
+    composed.message,
+    "It's cold enough to damage even your Lacinato Kale and Carrots. " +
+      "It'll be coldest around 5am.",
+  );
+});
+
+test('the reassurance stays hedged, because a forecast is not a promise', () => {
+  const composed = composeNotification(watch(), NOON);
+
+  assert.match(composed.message, /The Lacinato Kale should be fine\./);
+  assert.doesNotMatch(composed.message, /will be fine/);
+});
+
+test('the hour is a whole sentence when it cannot hang off the opening', () => {
+  const composed = composeNotification(
+    watch({
+      tenderVarieties: ['Cherokee Purple', 'Basil'],
+      hardyVarieties: [],
+      bedsAtRisk: [bed('Tomato bed', ['Cherokee Purple']), bed('Bed 2', ['Basil'])],
+    }),
+    NOON,
+  );
+
+  // Never the bare fragment "Coldest around 5am."
+  assert.match(composed.message, /It'll be coldest around 5am\./);
+  assert.doesNotMatch(composed.message, /(^|\. )Coldest around/);
+});
+
+test('a watch with nothing at risk is still coherent, even though it is never sent', () => {
+  // `decideNotification` refuses `severity: 'none'` outright, so these words
+  // cannot reach a phone. They are still reachable through the exported
+  // composer, and dead wording rots.
+  const { db, dir } = freshDb();
+
+  try {
+    const decision = decideNotification(db, watch({ severity: 'none' }), OPTIONS, NOON);
+    assert.equal(decision.send, false);
+  } finally {
+    cleanup(db, dir);
+  }
+
+  const composed = composeNotification(
+    watch({ severity: 'none', lowF: 38, tenderVarieties: [], bedsAtRisk: [] }),
+    NOON,
+  );
+
+  assert.equal(
+    composed.message,
+    "Nothing you've planted should mind a night this cold. It'll be coldest around 5am.",
+  );
+});
+
+test('a message that runs long gives up the least useful sentence first', () => {
+  const crowded = watch({
+    tenderVarieties: ['Basil', 'Black Beauty', 'Cherokee Purple', 'Jalapeño', 'Zucchini'],
+    hardyVarieties: ['Carrots', 'Garlic', 'Lacinato Kale'],
+    bedsAtRisk: [
+      bed('Tomato bed', ['Black Beauty', 'Cherokee Purple']),
+      bed('Bed 2', ['Basil']),
+      bed('Bed 3', ['Jalapeño']),
+      bed('Herb spiral', ['Basil']),
+      bed('The long one by the fence', ['Zucchini']),
+    ],
+    unknownSquareCount: 4,
+  });
+
+  const composed = composeNotification(crowded, NOON);
+
+  assert.ok(
+    composed.message.length <= 200,
+    `expected at most 200 characters, got ${composed.message.length}`,
+  );
+  // What survives: the instruction, the crops, where they are, and when.
+  assert.match(composed.message, /^Cover your Basil, Black Beauty, Cherokee Purple and 2 more/);
+  assert.match(composed.message, /spread across 5 beds\./);
+  assert.match(composed.message, /It'll be coldest around 5am\./);
+  // What goes first: the admission about unrecorded squares.
+  assert.doesNotMatch(composed.message, /not included/);
+});
+
+test('the botany does not come back', () => {
+  // She should not have to know what "tender" means to read her phone at ten at
+  // night — the same reason 0.4.0 stopped asking her what a nightshade was.
+  const shapes: FrostWatch[] = [
+    watch(),
+    watch({ severity: 'advisory', lowF: 34 }),
+    watch({ severity: 'hard_freeze', lowF: 24 }),
+    watch({ severity: 'none', lowF: 38, tenderVarieties: [], bedsAtRisk: [] }),
+    watch({ precision: 'day' }),
+    watch({ unknownSquareCount: 1 }),
+    watch({ unknownSquareCount: 7 }),
+    watch({ hardyVarieties: [] }),
+    watch({
+      severity: 'hard_freeze',
+      lowF: 24,
+      tenderVarieties: [],
+      bedsAtRisk: [bed('Kale bed', [], ['Lacinato Kale'])],
+    }),
+    watch({
+      tenderVarieties: ['Cherokee Purple', 'Basil'],
+      bedsAtRisk: [bed('Tomato bed', ['Cherokee Purple']), bed('Bed 2', ['Basil'])],
+    }),
+  ];
+
+  for (const shape of shapes) {
+    const { message } = composeNotification(shape, NOON);
+
+    assert.doesNotMatch(message, /tender/i, `"tender" is back in: ${message}`);
+    assert.doesNotMatch(message, /crop famil/i, `"crop family" is back in: ${message}`);
+    assert.doesNotMatch(message, /uncatalogu/i, `"uncatalogued" is back in: ${message}`);
+    assert.doesNotMatch(message, /hardy/i, `"hardy" is back in: ${message}`);
+    // Every message is whole sentences, so every message ends in a full stop.
+    assert.match(message, /\.$/, `not a finished sentence: ${message}`);
+  }
 });
 
 /**
@@ -500,17 +760,17 @@ test('the coldest-hour wording is rendered in the local zone', () => {
 
   assert.match(
     withTimeZone('America/Chicago', () => composeNotification(coldest, now)).message,
-    /Coldest around 5am\./,
+    /it'll be coldest around 5am\./,
   );
 
   assert.match(
     withTimeZone('Asia/Tokyo', () => composeNotification(coldest, now)).message,
-    /Coldest around 7pm\./,
+    /it'll be coldest around 7pm\./,
   );
 
   assert.match(
     withTimeZone('UTC', () => composeNotification(coldest, now)).message,
-    /Coldest around 10am\./,
+    /it'll be coldest around 10am\./,
   );
 });
 
