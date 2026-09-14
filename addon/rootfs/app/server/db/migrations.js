@@ -153,5 +153,62 @@ export const MIGRATIONS = [
             seedSettings(db, context.settingsSeed);
         },
     },
+    {
+        version: 5,
+        name: 'backup',
+        up(db) {
+            // Everything a restore needs in order to be survivable.
+            //
+            // `garden_snapshots` holds the state of the garden immediately before a
+            // restore overwrote it. That moment is the most dangerous one this
+            // feature has: restoring the wrong file over good records looks exactly
+            // like restoring the right one, right up until she goes looking for a
+            // harvest that is not there. Without a copy taken on the way past, there
+            // is nothing to go back to.
+            //
+            // The whole pre-restore garden is stored as one document rather than
+            // shredded into shadow tables. It is written once, read whole, and never
+            // queried by field — and keeping it in the same format the export
+            // endpoint emits means the safety copy can be handed to the user as a
+            // file without any conversion, which matters because /data is precisely
+            // what Supervisor deletes on uninstall. A copy she can only reach from
+            // inside the add-on does not survive the disaster it exists for.
+            //
+            // `reason` is recorded rather than implied so a future one ("before a
+            // schema upgrade", say) does not have to guess at the meaning of the rows
+            // already there.
+            db.exec(`
+        CREATE TABLE IF NOT EXISTS garden_snapshots (
+          id            INTEGER PRIMARY KEY AUTOINCREMENT,
+          taken_at      TEXT    NOT NULL,
+          reason        TEXT    NOT NULL,
+          seed_count    INTEGER NOT NULL,
+          bed_count     INTEGER NOT NULL,
+          harvest_count INTEGER NOT NULL,
+          document      TEXT    NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_garden_snapshots_taken_at
+          ON garden_snapshots (taken_at);
+      `);
+            // When a copy was last saved, so the app can say "last saved a copy 3
+            // weeks ago" instead of leaving her to remember. Server-side rather than
+            // in the browser: a per-device memory would tell her laptop "never" after
+            // she exported from her phone, which is worse than saying nothing.
+            //
+            // Deliberately a second key/value table rather than a key in `ha_state`.
+            // That one is documented as the Home Assistant integration's memory, and
+            // it is read by the notifier on a timer; mixing application bookkeeping
+            // into it would make both harder to reason about for the sake of saving
+            // six lines of schema.
+            db.exec(`
+        CREATE TABLE IF NOT EXISTS app_state (
+          key        TEXT PRIMARY KEY,
+          value      TEXT NOT NULL,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+        },
+    },
 ];
 //# sourceMappingURL=migrations.js.map

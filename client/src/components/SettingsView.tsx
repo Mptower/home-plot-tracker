@@ -6,16 +6,34 @@
  * entity ids next to a restart button, and getting to it means leaving the
  * garden entirely. They live here now, and the entity plumbing stayed behind —
  * which is why this page has exactly one editable card and one read-only one.
+ *
+ * ## Why this page renders when the garden does not
+ *
+ * It used to be reachable only once the garden had loaded, which was a known
+ * wart and is now a defect, because this page holds the backup panel. Reaching
+ * for a backup is something people do when things are already going wrong, and
+ * a recovery tool that requires a healthy system is not a recovery tool.
+ *
+ * Note the split inside: the notification form still waits for its own data,
+ * because a form that displays a guess about what is stored is worse than a
+ * form that says it cannot tell. The backup panel does not, because its primary
+ * action is a plain link to the server that works regardless.
  */
 import { useCallback } from 'react';
 import { SlidersHorizontal, TriangleAlert } from 'lucide-react';
 import { ViewHeader } from './ViewHeader';
 import { NotificationSettingsForm } from './settings/NotificationSettingsForm';
 import { IntegrationStatusPanel } from './settings/IntegrationStatusPanel';
+import { BackupPanel } from './settings/BackupPanel';
 import { useSettings } from '../hooks/useSettings';
 import type { GardenSettings } from '../types';
 
-export function SettingsView() {
+export interface SettingsViewProps {
+  /** Reloads the garden the app is holding once a restore has landed. */
+  onRestored?: () => void;
+}
+
+export function SettingsView({ onRestored }: SettingsViewProps) {
   const settings = useSettings();
   const { save } = settings;
 
@@ -31,7 +49,7 @@ export function SettingsView() {
       <ViewHeader
         icon={SlidersHorizontal}
         title="Settings"
-        description="Decide whether a coming frost is worth a notification, and when it should wait until morning."
+        description="Decide whether a coming frost is worth a notification, keep a copy of your garden, and put one back."
       />
 
       {settings.phase === 'loading' && (
@@ -80,6 +98,13 @@ export function SettingsView() {
       )}
 
       <IntegrationStatusPanel status={settings.status} />
+
+      {/*
+        Outside every conditional above. This is the one card on the page that
+        has to render when the rest of the app is broken, because that is when
+        somebody needs it.
+      */}
+      <BackupPanel onRestored={onRestored} />
     </div>
   );
 }

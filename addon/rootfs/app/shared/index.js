@@ -61,6 +61,36 @@ export const COLLECTION_NAMES = ['seeds', 'beds', 'harvests'];
 export const IF_MATCH_HEADER = 'If-Match';
 /** Header carrying the current version of a collection. */
 export const ETAG_HEADER = 'ETag';
+/**
+ * Backup and restore.
+ *
+ * Her whole garden lives in one SQLite file inside an add-on `/data` directory
+ * that Supervisor deletes on uninstall, with no confirmation step. These shapes
+ * are how she gets a copy out of it and back in without needing anybody else.
+ *
+ * The two constants that describe the file — its `format` string and the highest
+ * `formatVersion` this build understands — are exported from here as runtime
+ * values, so the server, the browser and the file itself cannot disagree about
+ * what a backup is called.
+ *
+ * They were briefly duplicated on each side of the fence instead, guarded by a
+ * parity test, because `server/src` could not take a runtime value from this
+ * package. That is no longer true: the add-on image now stages `@hpt/shared`
+ * and links it as a `file:` dependency, and `server/test/shared-imports.test.ts`
+ * is what keeps that staging honest. One definition is better than two that
+ * happen to match on the day they are written.
+ */
+/** Identifies a file as ours, so a wrong file can be refused by name. */
+export const BACKUP_FORMAT = 'home-plot-tracker.garden';
+/**
+ * The highest file format this build understands.
+ *
+ * Bump only when an older build would **misread** a newer file. Adding another
+ * optional field is not that: unknown top-level keys are tolerated on the way
+ * in, precisely so a future version can add one without stranding a file in an
+ * older install that could otherwise have restored it.
+ */
+export const BACKUP_FORMAT_VERSION = 1;
 export { PLANT_CATALOGUE, categoryForVariety, matchPlant, normalizePlantName, plantLookupKeys, searchPlants, } from './plants.js';
 /**
  * Cold tolerance per crop family.

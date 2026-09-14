@@ -1,3 +1,4 @@
+import { BACKUP_FORMAT, BACKUP_FORMAT_VERSION } from "./backup/format.js";
 /**
  * Bounds that exist purely to stop a single request from exhausting memory or
  * disk. They are far above anything a real vegetable garden produces.
@@ -276,6 +277,20 @@ export function validateHarvests(raw, path = 'body') {
 }
 const SNAPSHOT_FIELDS = ['seeds', 'beds', 'harvests'];
 /**
+ * The three collections, validated. Shared by `POST /api/import` and by the
+ * restore path so there is exactly one definition of what a valid garden is.
+ *
+ * Extracted rather than duplicated deliberately: two validators drift, and the
+ * one that drifts is always the one guarding the more dangerous operation.
+ */
+function readSnapshotFields(collector, path, raw) {
+    return {
+        seeds: readCollection(collector, `${path}.seeds`, raw.seeds, readSeed),
+        beds: readCollection(collector, `${path}.beds`, raw.beds, readBed),
+        harvests: readCollection(collector, `${path}.harvests`, raw.harvests, readHarvest),
+    };
+}
+/**
  * The whole-app payload accepted by `POST /api/import`. All three collections
  * are required: an import replaces everything, and letting a key be omitted
  * would make "wipe my harvests" indistinguishable from "I forgot a key".
@@ -285,12 +300,7 @@ export function validateSnapshot(raw) {
     if (!checkShape(collector, 'body', raw, SNAPSHOT_FIELDS)) {
         return { ok: false, issues: collector.issues };
     }
-    const snapshot = {
-        seeds: readCollection(collector, 'body.seeds', raw.seeds, readSeed),
-        beds: readCollection(collector, 'body.beds', raw.beds, readBed),
-        harvests: readCollection(collector, 'body.harvests', raw.harvests, readHarvest),
-    };
-    return finish(collector, snapshot);
+    return finish(collector, readSnapshotFields(collector, 'body', raw));
 }
 const SETTINGS_FIELDS = ['frostNotifications', 'quietHoursStart', 'quietHoursEnd'];
 /** `HH:MM`, 24-hour. The same shape `parseTimeOfDay` accepts in `config.ts`. */
@@ -326,16 +336,154 @@ function readBoolean(collector, path, value) {
  * hours are switched off — see `inQuietHours` in `ha/notifier.ts` — and it is a
  * choice the Settings page offers in as many words, not a mistake to reject.
  */
-export function validateSettings(raw) {
+export function validateSettings(raw, path = 'body') {
     const collector = new Collector();
-    if (!checkShape(collector, 'body', raw, SETTINGS_FIELDS)) {
+    if (!checkShape(collector, path, raw, SETTINGS_FIELDS)) {
         return { ok: false, issues: collector.issues };
     }
     const settings = {
-        frostNotifications: readBoolean(collector, 'body.frostNotifications', raw.frostNotifications),
-        quietHoursStart: readTimeOfDay(collector, 'body.quietHoursStart', raw.quietHoursStart),
-        quietHoursEnd: readTimeOfDay(collector, 'body.quietHoursEnd', raw.quietHoursEnd),
+        frostNotifications: readBoolean(collector, `${path}.frostNotifications`, raw.frostNotifications),
+        quietHoursStart: readTimeOfDay(collector, `${path}.quietHoursStart`, raw.quietHoursStart),
+        quietHoursEnd: readTimeOfDay(collector, `${path}.quietHoursEnd`, raw.quietHoursEnd),
     };
     return finish(collector, settings);
 }
+/** Everything we read. Anything else is ignored — see below. */
+const BACKUP_FIELDS = [
+    'format',
+    'formatVersion',
+    'exportedAt',
+    'counts',
+    'seeds',
+    'beds',
+    'harvests',
+    'settings',
+];
+function notABackup(message) {
+    return { ok: false, kind: 'invalid', issues: [{ path: 'file', message }] };
+}
+/**
+ * The body of `POST /api/restore`.
+ *
+ * ## Why this is not `validateSnapshot` with extra fields
+ *
+ * `validateSnapshot` rejects unknown top-level keys, so it cannot read a file
+ * that carries `format`, `exportedAt` and `counts`. Rather than loosen the
+ * import path — which guards a different, already-shipped contract — this reads
+ * the envelope itself and then hands the three collections to exactly the same
+ * readers.
+ *
+ * ## What is required, and what is merely allowed
+ *
+ * Only `seeds`, `beds` and `harvests` are required, and they are required for
+ * the reason an import requires them: a restore replaces everything, so an
+ * omitted key must never be indistinguishable from "wipe this collection".
+ *
+ * Everything else is optional, and that is the deliberate part. It makes the
+ * bare `{ seeds, beds, harvests }` files the maintainer's `export-garden.mjs`
+ * has been writing before every rollout valid input with no conversion step —
+ * which matters more than any other property of this function, because those
+ * files are currently the only copies of her garden anybody is certain exist.
+ *
+ * Unknown top-level keys are **tolerated**, not rejected, so a future release
+ * that adds an optional field does not strand its files in an older install
+ * that could otherwise have read them. `formatVersion` is what guards against
+ * genuinely unreadable files, and it is checked first.
+ */
+export function validateBackupDocument(raw) {
+    if (!isPlainObject(raw)) {
+        return notABackup(`expected a backup file containing a garden, received ${describe(raw)}`);
+    }
+    if (raw.format !== undefined) {
+        if (typeof raw.format !== 'string' || raw.format !== BACKUP_FORMAT) {
+            return {
+                ok: false,
+                kind: 'unsupported',
+                message: `This file identifies itself as ${JSON.stringify(raw.format)}, ` +
+                    'which is not a Home Plot Tracker backup. Nothing has been changed.',
+            };
+        }
+    }
+    let formatVersion = BACKUP_FORMAT_VERSION;
+    if (raw.formatVersion !== undefined) {
+        if (typeof raw.formatVersion !== 'number' ||
+            !Number.isInteger(raw.formatVersion) ||
+            raw.formatVersion < 1) {
+            return notABackup(`formatVersion should be a whole number, received ${describe(raw.formatVersion)}`);
+        }
+        if (raw.formatVersion > BACKUP_FORMAT_VERSION) {
+            return {
+                ok: false,
+                kind: 'unsupported',
+                message: `This backup is in format version ${raw.formatVersion}, and this version of ` +
+                    `Home Plot Tracker only understands up to version ${BACKUP_FORMAT_VERSION}. ` +
+                    'It was saved by a newer version of the app. Update the add-on and try again. ' +
+                    'Nothing has been changed.',
+            };
+        }
+        formatVersion = raw.formatVersion;
+    }
+    // Before reporting three separate missing fields, check whether this looks
+    // like a garden at all. "You opened the wrong file" is a different problem
+    // from "your backup is damaged", and she should not have to tell them apart
+    // from a list of field names.
+    const hasAnyCollection = SNAPSHOT_FIELDS.some((field) => raw[field] !== undefined);
+    if (!hasAnyCollection) {
+        return notABackup('this file contains no seeds, beds or harvests, so it is not a garden backup. ' +
+            'Nothing has been changed.');
+    }
+    const collector = new Collector();
+    for (const field of SNAPSHOT_FIELDS) {
+        if (raw[field] === undefined) {
+            collector.add(`file.${field}`, 'required field is missing — a restore replaces the whole garden, so an ' +
+                'absent collection cannot be told apart from an empty one');
+        }
+    }
+    const snapshot = readSnapshotFields(collector, 'file', raw);
+    let settings = null;
+    if (raw.settings !== undefined) {
+        // Checked as strictly as `PUT /api/settings` checks them, and a failure
+        // fails the whole restore. Quietly dropping an unreadable settings block
+        // while applying the garden would be a partial restore, which is the one
+        // outcome this feature promises never to produce.
+        const result = validateSettings(raw.settings, 'file.settings');
+        if (result.ok) {
+            settings = result.value;
+        }
+        else {
+            collector.issues.push(...result.issues);
+        }
+    }
+    // `counts` is advisory. It is written so a person can read the top of the
+    // file and know what is in it; it is never trusted, and the restore recounts
+    // from the arrays themselves. A hand-edited number therefore cannot talk its
+    // way past anything — it just becomes wrong.
+    if (raw.counts !== undefined && !isPlainObject(raw.counts)) {
+        collector.add('file.counts', `expected an object, received ${describe(raw.counts)}`);
+    }
+    let exportedAt = null;
+    if (raw.exportedAt !== undefined) {
+        if (typeof raw.exportedAt !== 'string') {
+            collector.add('file.exportedAt', `expected a string, received ${describe(raw.exportedAt)}`);
+        }
+        else {
+            exportedAt = raw.exportedAt;
+        }
+    }
+    if (!collector.ok) {
+        return { ok: false, kind: 'invalid', issues: collector.issues };
+    }
+    return {
+        ok: true,
+        value: {
+            snapshot,
+            settings,
+            exportedAt,
+            formatVersion,
+            labelled: raw.format === BACKUP_FORMAT,
+        },
+    };
+}
+/** Keys this build reads. Exported for the test that keeps exports readable. */
+export const BACKUP_DOCUMENT_FIELDS = BACKUP_FIELDS;
 //# sourceMappingURL=validation.js.map
