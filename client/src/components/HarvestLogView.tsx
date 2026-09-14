@@ -17,10 +17,10 @@ import { HarvestFeed } from './harvest-log/HarvestFeed';
 import { HarvestForm } from './harvest-log/HarvestForm';
 import { HarvestSummary } from './harvest-log/HarvestSummary';
 
-export function HarvestLogView({ harvests, setHarvests, seeds }: HarvestLogViewProps) {
+export function HarvestLogView({ harvests, setHarvests, seeds, beds }: HarvestLogViewProps) {
   const [query, setQuery] = useState('');
 
-  const varieties = useMemo(() => collectVarietyOptions(seeds, harvests), [seeds, harvests]);
+  const varieties = useMemo(() => collectVarietyOptions(seeds, harvests, beds), [seeds, harvests, beds]);
   const matches = useMemo(() => filterHarvests(harvests, query), [harvests, query]);
   const days = useMemo(() => groupHarvestsByDay(matches), [matches]);
   const matchTotals = useMemo(() => summarizeHarvests(matches), [matches]);

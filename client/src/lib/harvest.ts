@@ -3,7 +3,7 @@
  * by picking day, and season aggregation. Nothing here touches React or storage,
  * so every rule stays easy to reason about and test.
  */
-import type { HarvestLog, SeedPacket } from '../types';
+import type { GardenBed, HarvestLog, SeedPacket } from '../types';
 
 /** A harvest entry before it has been given an id. */
 export type HarvestDraft = Omit<HarvestLog, 'id'>;
@@ -223,14 +223,32 @@ export function summarizeHarvests(harvests: HarvestLog[]): HarvestTotals {
 }
 
 /**
- * Variety suggestions for the entry form: everything in the vault plus anything
- * already logged, deduplicated case-insensitively and alphabetised. Free-text
- * varieties stay possible because this only feeds a `<datalist>`.
+ * Variety suggestions for the entry form: everything in the vault, everything
+ * planted in a bed, and everything already logged — deduplicated
+ * case-insensitively and alphabetised.
+ *
+ * Beds are in here because of a real fragmentation in her data: the packet said
+ * "Cherry Tomato" and the harvest said "Tomato", so the two never joined up and
+ * yield-per-variety counted one plant as two. Suggesting what is actually
+ * growing is the cheap half of the fix. Free-text varieties stay possible
+ * because this only feeds a suggestion list — a neighbour's unlabelled seedling
+ * is still a thing she has to be able to record.
  */
-export function collectVarietyOptions(seeds: SeedPacket[], harvests: HarvestLog[]): string[] {
+export function collectVarietyOptions(
+  seeds: SeedPacket[],
+  harvests: HarvestLog[],
+  beds: GardenBed[] = [],
+): string[] {
   const seen = new Map<string, string>();
+  const planted = beds.flatMap((bed) =>
+    bed.layout.flat().filter((square): square is string => typeof square === 'string'),
+  );
 
-  for (const value of [...seeds.map((seed) => seed.variety), ...harvests.map((entry) => entry.variety)]) {
+  for (const value of [
+    ...seeds.map((seed) => seed.variety),
+    ...planted,
+    ...harvests.map((entry) => entry.variety),
+  ]) {
     const trimmed = value.trim();
     if (!trimmed) continue;
 

@@ -163,6 +163,7 @@ export default function App() {
                   harvests={garden.harvests}
                   setHarvests={garden.setHarvests}
                   seeds={garden.seeds}
+                  beds={garden.beds}
                 />
               )}
               {activeView === 'settings' && <SettingsView />}

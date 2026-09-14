@@ -4,6 +4,7 @@ import { AlertTriangle, Check, Search, Sprout, Trash2, X } from 'lucide-react';
 import type { SeedPacket } from '../../types';
 import { SEED_CATEGORIES } from '../../types';
 import { getCategoryStyle } from '../../lib/rotation';
+import { catalogueSuggestions } from '../../lib/plantSuggest';
 
 export interface PlantPickerProps {
   bedName: string;
@@ -86,6 +87,24 @@ export function PlantPicker({
       ),
     }));
   }, [seeds, query, categoryFilter]);
+
+  /**
+   * The wider catalogue, offered underneath her own vault.
+   *
+   * Only once she has typed something: opening this modal should show the seeds
+   * she owns, not a hundred and seventy varieties she does not. Anything
+   * already in the vault is left out so the same plant never appears twice.
+   */
+  const catalogueMatches = useMemo(() => {
+    if (query.trim() === '') return [];
+
+    return catalogueSuggestions(query, {
+      limit: 12,
+      excludeVarieties: seeds.map((seed) => seed.variety),
+    }).filter(
+      (suggestion) => categoryFilter === ALL_CATEGORIES || suggestion.category === categoryFilter,
+    );
+  }, [query, seeds, categoryFilter]);
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key === 'Escape') {
@@ -183,11 +202,11 @@ export function PlantPicker({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          {groups.length === 0 ? (
+          {groups.length === 0 && catalogueMatches.length === 0 ? (
             <p className="rounded-2xl border border-dashed border-panel-edge bg-panel-sunken px-4 py-6 text-center text-sm text-stone-500">
-              {seeds.length === 0
-                ? 'No varieties in the vault yet. Add a packet in the Seed Vault to plant it here.'
-                : 'No varieties match that search.'}
+              {seeds.length === 0 && query.trim() === ''
+                ? 'No varieties in the vault yet. Search to plant something from the plant list, or add a packet in the Seed Vault.'
+                : 'Nothing matches that search.'}
             </p>
           ) : (
             <div className="space-y-5">
@@ -243,6 +262,56 @@ export function PlantPicker({
                   </section>
                 );
               })}
+
+              {catalogueMatches.length > 0 && (
+                <section>
+                  <h4 className="flex items-center gap-2 px-1 text-xs font-semibold uppercase tracking-wide text-stone-500">
+                    <Sprout className="h-3.5 w-3.5 text-stone-400" aria-hidden="true" />
+                    From the plant list
+                  </h4>
+                  <p className="mt-1 px-1 text-xs text-stone-500">
+                    Not in your vault. Frost warnings need a seed packet, so add one for anything
+                    you plant from here.
+                  </p>
+
+                  <ul className="mt-2 space-y-1.5">
+                    {catalogueMatches.map((suggestion) => {
+                      const style = getCategoryStyle(suggestion.category);
+                      const isCurrent = suggestion.variety === currentVariety;
+
+                      return (
+                        <li key={suggestion.key}>
+                          <button
+                            type="button"
+                            onClick={() => onAssign(suggestion.variety)}
+                            className={`flex w-full items-center gap-3 rounded-2xl border border-dashed px-3 py-2.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-panel ${
+                              isCurrent
+                                ? 'border-emerald-500 bg-emerald-50'
+                                : 'border-panel-edge bg-panel hover:border-emerald-300 hover:bg-emerald-50/60'
+                            }`}
+                          >
+                            <span
+                              className={`h-8 w-8 shrink-0 rounded-lg opacity-70 ${style.swatch}`}
+                              aria-hidden="true"
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-semibold text-stone-900">
+                                {suggestion.variety}
+                              </span>
+                              <span className="block truncate text-xs text-stone-500">
+                                {suggestion.category}
+                              </span>
+                            </span>
+                            {isCurrent && (
+                              <Check className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              )}
             </div>
           )}
         </div>

@@ -117,7 +117,7 @@ export function SeedVaultView({ seeds, setSeeds }: SeedVaultViewProps) {
         </button>
       </div>
 
-      {isFormOpen && <AddSeedForm onAdd={handleAdd} onCancel={() => setIsFormOpen(false)} />}
+      {isFormOpen && <AddSeedForm onAdd={handleAdd} onCancel={() => setIsFormOpen(false)} seeds={seeds} />}
 
       {seeds.length > 0 && (
         <SeedFilters
