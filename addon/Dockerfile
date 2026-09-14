@@ -30,13 +30,16 @@ LABEL \
 
 ENV NODE_ENV=production
 
-# rootfs/app  -> /app   (built server, built client, production manifest)
+# rootfs/app  -> /app   (built server, built client, shared runtime, manifest)
 # rootfs/run.sh -> /run.sh
 COPY rootfs /
 
 # Only production dependencies, from a lockfile staged alongside the manifest.
-# The single runtime dependency is Express; `node:sqlite` is part of Node and
-# nothing here compiles, so there is no build toolchain in this image.
+# Express is the one dependency fetched from the registry; `@hpt/shared` is a
+# `file:` link to /app/shared, which the COPY above has already put in place, so
+# npm turns it into a symlink at /app/node_modules/@hpt/shared and that is how
+# `node server/index.js` resolves the bare specifier. `node:sqlite` is part of
+# Node and nothing here compiles, so there is no build toolchain in this image.
 WORKDIR /app
 RUN npm ci --omit=dev --no-audit --no-fund \
   && npm cache clean --force

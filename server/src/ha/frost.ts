@@ -20,6 +20,7 @@ import type {
   Tenderness,
 } from '@hpt/shared';
 import { FROST_THRESHOLDS_F, tendernessOf } from './tenderness.ts';
+import { buildCategoryLookup } from './varietyCategory.ts';
 
 /** Rank for comparing bands. Only ever used for ordering, never persisted. */
 export const SEVERITY_RANK: Readonly<Record<FrostSeverity, number>> = {
@@ -119,17 +120,6 @@ function tallyBed(bed: GardenBed, categoryOf: (variety: string) => string | null
   }
 
   return { bedId: bed.id, bedName: bed.name, byTenderness, unknownSquares };
-}
-
-/** Indexes the vault by variety name, so a lookup is a map hit rather than a scan. */
-function buildCategoryLookup(seeds: readonly SeedPacket[]): (variety: string) => string | null {
-  const byVariety = new Map<string, string>();
-
-  for (const seed of seeds) {
-    if (typeof seed?.variety === 'string') byVariety.set(seed.variety, seed.category);
-  }
-
-  return (variety) => byVariety.get(variety) ?? null;
 }
 
 export interface FrostAssessmentInput {

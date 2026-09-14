@@ -29,15 +29,22 @@
  * tenderness override here, because with families chosen this way there is
  * nothing for one to fix.
  *
- * ## Where this may and may not be imported
+ * ## Where this may be imported
  *
- * This module is a runtime value, not a type. The **client** imports it; the
- * **server must not**. The add-on image stages `server/dist/src` with Express
- * as its only dependency and no `node_modules/@hpt/shared` at all, so a server
- * runtime import from this package resolves cleanly in development and in every
- * test, then crashes the add-on on boot with `ERR_MODULE_NOT_FOUND`. See the
- * header of `homeAssistant.ts`, and `server/test/shared-imports.test.ts`, which
- * fails the build if a server source file ever does it.
+ * This module is a runtime value, not a type, and both sides import it. The
+ * **client** uses it to suggest plants in the picker; the **server** uses it in
+ * `ha/varietyCategory.ts` to work out what a bed square is when there is no
+ * seed packet to ask, which is the difference between warning her about a
+ * frost-tender planting and saying nothing at all.
+ *
+ * That used to be forbidden. The add-on image staged `server/dist/src` with
+ * Express as its only dependency and no `node_modules/@hpt/shared`, so a server
+ * runtime import from this package resolved cleanly in development and in every
+ * test and then crashed the add-on on boot with `ERR_MODULE_NOT_FOUND`.
+ * `scripts/build-addon.mjs` now stages this package's build into the image as a
+ * real `file:` dependency, and `server/test/shared-imports.test.ts` enforces
+ * that it stays staged — it fails if a server source imports this package while
+ * the committed add-on tree does not ship it.
  */
 
 /** One plant the catalogue knows, and the crop family it belongs to. */

@@ -102,9 +102,16 @@ The add-on reads your weather forecast every fifteen minutes and warns you when
 a cold night threatens what you have actually planted — naming the crops and the
 bed, rather than just saying "frost".
 
-Which crops are at risk comes from each seed packet's category. Nightshades,
-cucurbits, legumes and herbs are treated as tender; brassicas, alliums, roots
-and leafy greens as hardy. A category it does not recognise is never guessed at:
+Which crops are at risk comes from the category on your seed packet, and if you
+planted something you have no packet for, from the built-in plant list instead —
+so a square planted straight from the plant list is warned about like any other.
+Small differences in spelling are forgiven: a square that says "cherry tomatoes"
+finds your "Cherry Tomato" packet. Nightshades, cucurbits, legumes and herbs are
+treated as tender; brassicas, alliums, roots and leafy greens as hardy.
+
+Your own packet always wins. If you have filed something under a category the
+add-on would have chosen differently, it does not overrule you — the seed vault
+offers to correct it instead. And a plant nothing can place is never guessed at:
 it is counted and shown, so the warning tells you how many squares it cannot
 speak for.
 

@@ -1,79 +1,32 @@
 /**
- * How badly a crop family minds the cold, and the bands that matter.
+ * The frost bands, and the crop-family tenderness map the warnings are built on.
  *
- * The whole point of the frost warning is that it names *her* plants. "Frost
- * Saturday night" is something a phone weather app already says; "your tomatoes
- * and squash in Bed 1 are tender, the kale will be fine" is the part worth
- * building. That distinction comes from here.
+ * The map itself is not here any more. It lives in `shared/src/tenderness.ts`
+ * and is re-exported below, because the browser needs the same knowledge — the
+ * point of offering to fix a miscategorised packet is being able to say *why it
+ * matters*, that her tomato is currently filed as something the frost engine
+ * treats as hardy and so is not being warned about.
  *
- * The mapping is deliberately coarse — three values, keyed on the category a
- * seed packet already carries — because the alternative is a per-variety cold
- * hardiness database that nobody will maintain and that would be wrong for half
- * her packets anyway.
- *
- * This lives in `server/` rather than `shared/` because it is runtime code and
- * the add-on image does not ship `shared/`. See the header of
- * `shared/src/homeAssistant.ts`.
+ * There used to be two hand-kept copies of it, held together by a parity test,
+ * because the add-on image did not ship `@hpt/shared` and a server runtime
+ * import from it would have crashed the add-on on boot.
+ * `scripts/build-addon.mjs` now stages that package into the image as a real
+ * `file:` dependency, so there is one copy again. The re-export keeps every
+ * existing import in `server/src/ha/` pointing at this file, which is where the
+ * warnings come from and where somebody reading the frost engine will look.
  */
-import type { Tenderness } from '@hpt/shared';
+import { CATEGORY_TENDERNESS, isKnownTendernessCategory, tendernessOf } from '@hpt/shared';
 
-/**
- * Crop family to cold tolerance.
- *
- * `Herb` is the one genuine compromise. It spans basil, which collapses at
- * 40°F, and rosemary, sage and thyme, which are fine under snow. It is mapped
- * `tender` because basil is the herb people actually lose, and being warned
- * about a hardy rosemary costs nothing next to losing the basil.
- *
- * `Fruit` deliberately holds only hardy perennial fruit — strawberries,
- * brambles, currants, grapes, rhubarb. Melons are `Cucurbit`, which is what
- * they botanically are, so this category never has to answer for both a
- * strawberry and a watermelon at once. See `shared/src/plants.ts`.
- *
- * `Other` is `tender` both because its members are (corn, okra, sweet potato,
- * celery) and because tender is the safe default for a catch-all: over-warning
- * costs a bedsheet, under-warning costs the crop. It is not the same as having
- * no category — an uncategorised planting is still `unknown` and still raises
- * nothing.
- *
- * Null-prototype, because the keys are variety categories that ultimately come
- * from user input. With an ordinary object literal, a square planted with
- * something called "constructor" or "toString" would find an inherited property
- * and be classified as whatever that happens to be, instead of `unknown`.
- */
-export const CATEGORY_TENDERNESS: Readonly<Record<string, Tenderness>> = Object.assign(
-  Object.create(null) as Record<string, Tenderness>,
-  {
-    Nightshade: 'tender',
-    Cucurbit: 'tender',
-    Legume: 'tender',
-    Herb: 'tender',
-    Flower: 'tender',
-    Other: 'tender',
-    Brassica: 'hardy',
-    Allium: 'hardy',
-    Root: 'hardy',
-    'Leafy Green': 'hardy',
-    Fruit: 'hardy',
-  } satisfies Record<string, Tenderness>,
-);
-
-export function tendernessOf(category: string | null | undefined): Tenderness {
-  if (!category) return 'unknown';
-
-  return Object.hasOwn(CATEGORY_TENDERNESS, category)
-    ? (CATEGORY_TENDERNESS[category] ?? 'unknown')
-    : 'unknown';
-}
+export { CATEGORY_TENDERNESS, isKnownTendernessCategory, tendernessOf };
 
 /**
  * Which of the given categories this mapping does not cover.
  *
  * Takes the list rather than importing `SEED_CATEGORIES` so the check reads the
  * same in a test as it would anywhere else. It exists so a test can fail the
- * day somebody adds a ninth category and forgets this file — at which point
- * every plant of that family would silently become `unknown` and stop being
- * warned about, with nothing anywhere to say so.
+ * day somebody adds a ninth category and forgets the map — at which point every
+ * plant of that family would silently become `unknown` and stop being warned
+ * about, with nothing anywhere to say so.
  */
 export function categoriesMissingTenderness(categories: readonly string[]): string[] {
   return categories.filter((category) => !Object.hasOwn(CATEGORY_TENDERNESS, category));
@@ -89,6 +42,8 @@ export function categoriesMissingTenderness(categories: readonly string[]): stri
  * forecast called 34–36°F, so 36°F is the trigger gardeners actually use, and
  * a warning that only fired at 32°F would miss the nights that cost her the
  * tomatoes.
+ *
+ * These stay server-side. Nothing in the browser decides whether it is cold.
  */
 export const FROST_THRESHOLDS_F = {
   /** Tender crops at risk. Cover them. */

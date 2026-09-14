@@ -9,6 +9,7 @@
     "node": ">=22.6.0"
   },
   "dependencies": {
+    "@hpt/shared": "file:shared",
     "express": "5.2.1"
   }
 }

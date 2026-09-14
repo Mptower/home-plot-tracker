@@ -37,17 +37,31 @@ addon/     the Home Assistant add-on
 exactly the shapes the client renders. It builds to `dist/` with declarations,
 which is why every root script builds it first.
 
-**`shared/` is types only *for the server*, and this is load-bearing.**
-Everything `server/src` imports from it is an `import type`, which TypeScript
-erases at compile time. The add-on image vendors a flattened copy of
-`server/dist/src` with `express` as its only dependency and no `@hpt/shared` on
-disk at all — so a *value* imported from `shared/` into the server would pass
-typecheck, pass the tests, run fine under `npm run dev`, and then crash the
-add-on on boot with `ERR_MODULE_NOT_FOUND`. Server-side runtime logic belongs in
-`server/src/`; `shared/` gets the type that describes it. The frost model is the
-worked example: the wire types are in
+**`shared/` ships inside the add-on image, and how it gets there is
+load-bearing.** The image vendors a flattened copy of `server/dist/src`, the
+built client, and a flattened copy of `shared/dist` at `/app/shared`, wired up by
+a `"@hpt/shared": "file:shared"` dependency in the generated manifest. `npm ci`
+in the image turns that into a symlink at `/app/node_modules/@hpt/shared`, so a
+bare `@hpt/shared` specifier resolves at runtime exactly as it does in the
+workspace.
+
+This was not always true. Until the frost-coverage change, nothing from
+`shared/` was on disk in the container at all, every server import from it was
+an `import type`, and a *value* imported from `shared/` would pass typecheck,
+pass the tests, run fine under `npm run dev`, and then crash the add-on on boot
+with `ERR_MODULE_NOT_FOUND`. The guard that used to forbid those imports now
+enforces the replacement invariant instead — see
+[`server/test/shared-imports.test.ts`](server/test/shared-imports.test.ts) and
+[How the add-on is put together](#how-the-add-on-is-put-together).
+
+What belongs in `shared/` has not changed: the contract, and the pure functions
+over it that both sides must agree on. Server-side machinery — the database, the
+Home Assistant client, the scheduler — stays in `server/src/`. The frost model is
+the worked example: the wire types are in
 [`shared/src/homeAssistant.ts`](shared/src/homeAssistant.ts) and the logic that
-produces them is in [`server/src/ha/`](server/src/ha/).
+produces them is in [`server/src/ha/`](server/src/ha/), while the category →
+tenderness map, which both sides genuinely need, lives in
+[`shared/src/tenderness.ts`](shared/src/tenderness.ts).
 
 `shared/` does carry runtime values for the **client**, which is bundled by Vite
 and has no such constraint — the plant catalogue in
@@ -541,8 +555,16 @@ three bands, in °F:
 | `frost`       | ≤ 32 °F | Tender crops will be damaged                          |
 | `hard_freeze` | ≤ 28 °F | Hardy crops are in trouble too                        |
 
-A warning names what is actually planted. Every seed packet carries a
-`category`, and each category maps to a tenderness:
+A warning names what is actually planted. A bed square holds a variety name, and
+the frost engine resolves it to a crop family in four steps: her seed vault
+matched exactly, then her seed vault matched tolerantly (case, accents,
+punctuation and plurals folded away), then the plant catalogue, then nothing.
+The vault always wins — the catalogue only fills gaps, and never overrules a
+category she set herself. Anything none of them can place stays `unknown`,
+raises no warning, and is counted in `unknownSquareCount` so the banner can be
+honest about the gap.
+
+Each category maps to a tenderness:
 
 | Tenderness | Categories                                       |
 | ---------- | ------------------------------------------------ |
@@ -565,12 +587,14 @@ members are (corn, okra, sweet potato, celery) and because tender is the safe
 default for a catch-all: over-warning costs a bedsheet, under-warning costs the
 crop.
 
-The map lives in [`server/src/ha/tenderness.ts`](server/src/ha/tenderness.ts),
-with a browser copy in [`shared/src/tenderness.ts`](shared/src/tenderness.ts)
-so the Seed Vault can explain why a miscategorised packet matters. The two are
-held together by `server/test/tenderness-parity.test.ts`, which fails if they
-drift. The duplication exists because the server cannot import `@hpt/shared` at
-runtime — see [How the add-on is put together](#how-the-add-on-is-put-together).
+The map lives in [`shared/src/tenderness.ts`](shared/src/tenderness.ts), and
+both sides import the same object — the server through
+[`server/src/ha/tenderness.ts`](server/src/ha/tenderness.ts), which re-exports
+it, and the Seed Vault directly, so it can explain why a miscategorised packet
+matters. There used to be two copies held together by a parity test, because the
+add-on image had no `@hpt/shared` on disk. It does now, so
+`server/test/tenderness.test.ts` asserts *identity* instead: the same object,
+not two that happen to agree.
 
 An unrecognised category is **never guessed at**. It cannot trigger a warning,
 but it is counted and shown, so the banner says "3 squares have no crop family
@@ -714,11 +738,19 @@ npm run build:addon    # build all three packages, then stage into addon/rootfs/
 npm run check:addon    # CI: is the staged copy still in sync?
 ```
 
-It writes the compiled server (minus source maps), the built client, and a
-production-only `package.json`/`package-lock.json` whose single dependency is
-Express — `node:sqlite` is part of Node, and `@hpt/shared` is imported only as
-types, which the compiler erases. The image then runs `npm ci --omit=dev`, and
-nothing in it compiles.
+It writes the compiled server (minus source maps), the built client, a flattened
+copy of `shared/dist` at `app/shared/` with a generated manifest, and a
+production-only `package.json`/`package-lock.json` whose two dependencies are
+Express and `"@hpt/shared": "file:shared"` — `node:sqlite` is part of Node. The
+image then runs `npm ci --omit=dev`, which installs Express and links
+`node_modules/@hpt/shared` to the vendored copy. Nothing in the image compiles.
+
+The shared copy is staged **flat** — `app/shared/index.js`, not
+`app/shared/dist/index.js` — and that is not cosmetic. `.gitignore` lists
+`node_modules` and `dist` without a leading slash, so git matches those names at
+*any* depth. A staged `app/shared/dist/` would exist on the build machine, pass
+`check:addon`, and be silently absent from the clone Supervisor builds. The
+staging script asserts no staged directory is named either.
 
 Four things about that image are load-bearing, and each of them cost a debugging
 session to find:
@@ -789,8 +821,9 @@ HTTP and SQLite rather than mocks of them. Coverage:
 | `transactions.test.ts`  | a failed write leaving the previous collection intact       |
 | `static.test.ts`        | cache headers, SPA fallback, mounting under a prefix        |
 | `frost.test.ts`         | the tenderness map, the three bands, which night a low belongs to, and the miscategorised-tomato regression |
-| `tenderness-parity.test.ts` | the server's tenderness map and the browser's copy agreeing |
-| `shared-imports.test.ts` | no `server/src` file importing `@hpt/shared` as a runtime value |
+| `variety-category.test.ts` | resolving a bed square to a crop family: vault exactly, vault tolerantly, catalogue, then nothing |
+| `tenderness.test.ts`    | the server's tenderness map being the shared one, not a copy of it |
+| `shared-imports.test.ts` | the add-on image actually shipping `@hpt/shared`: declared, locked, staged, resolvable and not git-ignored |
 | `ha-sensors.test.ts`    | the exact published payloads, rounding, the collision guard |
 | `ha-notify.test.ts`     | one per snap, escalation, quiet hours, surviving a restart   |
 | `ha-absent.test.ts`     | no Home Assistant at all: no client, no timers, no sockets   |
@@ -918,9 +951,9 @@ hides that exact conflict set, and creating a new conflict brings it back.
 **Planting a square.** Click a square and the picker offers her own vault first,
 grouped by family, because planting what you already own is the common case.
 Underneath, the wider plant catalogue matches whatever she typed, shown with a
-dashed edge and a note saying frost warnings need a seed packet — the frost
-engine resolves a bed square by exact variety name against the vault, so a
-square planted from the catalogue alone has no family and raises nothing.
+dashed edge. Planting from there is fully warned about: the frost engine resolves
+a bed square against the vault first and falls back to the catalogue, so a square
+planted from the plant list still has a family.
 
 ### 🗃️ Seed Vault
 

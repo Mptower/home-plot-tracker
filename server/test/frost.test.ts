@@ -207,13 +207,16 @@ test('a hardy-only bed is left out of a frost but named in a hard freeze', () =>
   assert.deepEqual(hardFreeze?.bedsAtRisk.map((b) => b.bedName), ['Tomato bed', 'Kale bed']);
 });
 
-test('an uncatalogued planting is counted and admitted, never warned about', () => {
+test('a planting nothing can place is counted and admitted, never warned about', () => {
   const watch = assessFrostRisk({
     forecast: [point(ahead(1), 30)],
     beds: [
       bed({
         layout: [
-          ['Mystery Squash', 'Mystery Squash', null],
+          // Deliberately unplaceable. Not "Mystery Squash", which the catalogue
+          // reads as a squash and quite rightly warns about — see the tier tests
+          // below.
+          ['Who Knows', 'Who Knows', null],
           ['Something Else', null, null],
         ],
       }),

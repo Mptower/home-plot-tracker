@@ -16,15 +16,17 @@
  * A client that gets `available: false` renders nothing and says nothing. There
  * is deliberately no error state to design, because there is no error.
  *
- * **This file is types only.** Every server import from `@hpt/shared` in this
- * repository is an `import type`, erased at compile time — and that is load
- * bearing, not stylistic. The add-on image built by `scripts/build-addon.mjs`
- * stages `server/dist/src` with `express` as its only dependency; there is no
- * `shared/` and no `node_modules/@hpt/shared` inside it. A runtime value
- * imported from here by the server would resolve fine in development and in the
- * tests, then crash the add-on on boot with `ERR_MODULE_NOT_FOUND`. So the
- * frost bands, the tenderness mapping and the assessment itself live in
- * `server/src/ha/`, and only the shapes they produce live here.
+ * **This file is types only.** Not because a value here would be unsafe — the
+ * add-on image now ships this package, so the server imports the plant
+ * catalogue and the tenderness map from it at runtime — but because this
+ * particular file describes a wire contract, and a wire contract with
+ * behaviour in it stops being one. The frost bands, the forecast reading and
+ * the assessment itself live in `server/src/ha/`; only the shapes they produce
+ * live here.
+ *
+ * What the image does and does not contain is enforced by
+ * `server/test/shared-imports.test.ts`: a server source may import this package
+ * as a runtime value exactly as long as `addon/rootfs/app/` actually stages it.
  */
 
 /** How badly a crop family minds the cold. */
