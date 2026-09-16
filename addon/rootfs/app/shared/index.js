@@ -104,6 +104,11 @@ export { PLANT_CATALOGUE, categoryForVariety, matchPlant, normalizePlantName, pl
  * `moreTender` is the ordering over those answers, and lives beside the map for
  * the same reason: one map, one direction of travel.
  */
+<<<<<<< HEAD
 export { CATEGORY_TENDERNESS, isKnownTendernessCategory, moreTender, tendernessOf, } from './tenderness.js';
 export { frostHeadline, frostSentences, joinNames } from './frostVoice.js';
+=======
+export { CATEGORY_TENDERNESS, isKnownTendernessCategory, tendernessOf, } from './tenderness.js';
+export { coldestHour, frostHeadline, frostSentences, isColdestHour, joinNames, } from './frostVoice.js';
+>>>>>>> a725d95 (Make the coldest hour a type a caller cannot misuse)
 //# sourceMappingURL=index.js.map

@@ -18,11 +18,15 @@
  * * **The banner's economies are the ones a screen justifies.** It differs from
  *   the notification in exactly two ways — it names every crop and every bed —
  *   and those are options, not a second implementation.
+ * * **The hour is a bare hour.** `frostSentences` builds the preamble around
+ *   it, so a caller passing the finished clause renders it twice. That is a
+ *   `ColdestHour` now, and — because the caller who hit it was JavaScript and a
+ *   brand would have saved it nothing — guarded at runtime as well.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { BedAtRisk, FrostWatch } from '@hpt/shared';
-import { frostHeadline, frostSentences, joinNames } from '@hpt/shared';
+import type { BedAtRisk, ColdestHour, FrostWatch } from '@hpt/shared';
+import { coldestHour, frostHeadline, frostSentences, isColdestHour, joinNames } from '@hpt/shared';
 
 /** What the banner passes: a surface with room to name the whole garden. */
 const BANNER = { nameLimit: Infinity, bedLimit: Infinity };
@@ -53,7 +57,7 @@ function watch(overrides: Partial<FrostWatch> = {}): FrostWatch {
 
 /** Everything the banner would render, in the order it renders it. */
 function bannerText(w: FrostWatch, hour = '5am'): string {
-  const said = frostSentences(w, hour, BANNER);
+  const said = frostSentences(w, coldestHour(hour), BANNER);
 
   return [...said.lead, said.caveat, said.aside, said.reassurance, said.unrecorded]
     .filter((sentence) => sentence !== '')
@@ -61,7 +65,7 @@ function bannerText(w: FrostWatch, hour = '5am'): string {
 }
 
 test('the frost leads with what to go and do', () => {
-  const said = frostSentences(watch(), '5am', BANNER);
+  const said = frostSentences(watch(), coldestHour('5am'), BANNER);
 
   assert.equal(said.action, 'Cover your Cherry Tomato in Tomato bed');
   assert.equal(said.actionIsOpenClause, true);
@@ -93,7 +97,7 @@ test('two beds are split off with the dash, so the two lists cannot collide', ()
         bed('Bed 2', ['Basil'], ['Kale']),
       ],
     }),
-    '3am',
+    coldestHour('3am'),
     BANNER,
   );
 
@@ -112,7 +116,7 @@ test('one crop in several beds still agrees with itself', () => {
       hardyVarieties: [],
       bedsAtRisk: [bed('Tomato bed', ['Cherry Tomato']), bed('Bed 2', ['Cherry Tomato'])],
     }),
-    '5am',
+    coldestHour('5am'),
     BANNER,
   );
 
@@ -124,7 +128,7 @@ test('a bed holding nothing tender is not named as though it were', () => {
     watch({
       bedsAtRisk: [bed('Tomato bed', ['Cherry Tomato']), bed('Kale bed', [], ['Kale'])],
     }),
-    '5am',
+    coldestHour('5am'),
     BANNER,
   );
 
@@ -178,7 +182,7 @@ test('the notification still collapses them, because a lock screen has to', () =
 
   // Defaults are the notification's, so the two surfaces differ only where a
   // caller asked them to.
-  assert.match(frostSentences(many, '4am').action, /they're spread across 4 beds\./);
+  assert.match(frostSentences(many, coldestHour('4am')).action, /they're spread across 4 beds\./);
 });
 
 test('the banner names every crop, however many there are', () => {
@@ -195,18 +199,18 @@ test('the banner names every crop, however many there are', () => {
   );
   // The old banner read "Basil, Cherry Tomato and Jalapeño and 1 more".
   assert.doesNotMatch(bannerText(crowded, '4am'), /and 1 more/);
-  assert.match(frostSentences(crowded, '4am').action, /Basil, Cherry Tomato, Jalapeño and 1 more/);
+  assert.match(frostSentences(crowded, coldestHour('4am')).action, /Basil, Cherry Tomato, Jalapeño and 1 more/);
 });
 
 test('one crop and many crops both read as English', () => {
-  assert.match(frostSentences(watch(), '5am', BANNER).action, /Cover your Cherry Tomato in/);
+  assert.match(frostSentences(watch(), coldestHour('5am'), BANNER).action, /Cover your Cherry Tomato in/);
   assert.match(
     frostSentences(
       watch({
         tenderVarieties: ['Cherry Tomato', 'Basil'],
         bedsAtRisk: [bed('Tomato bed', ['Cherry Tomato', 'Basil'])],
       }),
-      '5am',
+      coldestHour('5am'),
       BANNER,
     ).action,
     /Cover your Cherry Tomato and Basil in/,
@@ -216,7 +220,7 @@ test('one crop and many crops both read as English', () => {
 /** The reassuring half, and its hard-freeze replacement. */
 
 test('the reassurance stays hedged, because a forecast is not a promise', () => {
-  const said = frostSentences(watch(), '5am', BANNER);
+  const said = frostSentences(watch(), coldestHour('5am'), BANNER);
 
   assert.equal(said.reassurance, 'The Kale should be fine.');
   assert.equal(said.aside, '');
@@ -225,11 +229,11 @@ test('the reassurance stays hedged, because a forecast is not a promise', () => 
 });
 
 test('nothing hardy planted means nothing to reassure her about', () => {
-  assert.equal(frostSentences(watch({ hardyVarieties: [] }), '5am', BANNER).reassurance, '');
+  assert.equal(frostSentences(watch({ hardyVarieties: [] }), coldestHour('5am'), BANNER).reassurance, '');
 });
 
 test('a hard freeze does not tell her to cover what a cover cannot save', () => {
-  const said = frostSentences(watch({ severity: 'hard_freeze', lowF: 24 }), '5am', BANNER);
+  const said = frostSentences(watch({ severity: 'hard_freeze', lowF: 24 }), coldestHour('5am'), BANNER);
 
   assert.match(said.action, /^Pick what you can from your Cherry Tomato in Tomato bed/);
   assert.doesNotMatch(said.action, /Cover your/);
@@ -259,7 +263,7 @@ test('a hard freeze with only hardy crops names them instead of overstating it',
       hardyVarieties: ['Kale', 'Carrots'],
       bedsAtRisk: [bed('Kale bed', [], ['Kale', 'Carrots'])],
     }),
-    '5am',
+    coldestHour('5am'),
     BANNER,
   );
 
@@ -278,7 +282,7 @@ test('a hard freeze over an empty garden still finishes its sentence', () => {
       hardyVarieties: [],
       bedsAtRisk: [],
     }),
-    '5am',
+    coldestHour('5am'),
     BANNER,
   );
 
@@ -290,7 +294,7 @@ test('nothing at risk is coherent even though no surface shows it', () => {
   // banner before this is reached. Dead wording rots, so it is still pinned.
   const said = frostSentences(
     watch({ severity: 'none', lowF: 38, tenderVarieties: [], bedsAtRisk: [] }),
-    '5am',
+    coldestHour('5am'),
     BANNER,
   );
 
@@ -346,7 +350,7 @@ test('her real garden under a hard freeze picks rather than covers', () => {
   );
   // Nothing hardy in the ground, so there is no aside to make — and inventing
   // one would name a crop she has not planted.
-  assert.equal(frostSentences(hers, '5am', BANNER).aside, '');
+  assert.equal(frostSentences(hers, coldestHour('5am'), BANNER).aside, '');
 });
 
 test('her real garden with a daily forecast still finishes its sentence', () => {
@@ -362,11 +366,11 @@ test('her real garden with a daily forecast still finishes its sentence', () => 
 
 /** The hour, and the honesty about not knowing it. */
 test('an hourly forecast names the hour', () => {
-  assert.equal(frostSentences(watch(), '5am', BANNER).hour, "It'll be coldest around 5am.");
+  assert.equal(frostSentences(watch(), coldestHour('5am'), BANNER).hour, "It'll be coldest around 5am.");
 });
 
 test('a daily forecast invents nothing', () => {
-  const said = frostSentences(watch({ precision: 'day' }), '', BANNER);
+  const said = frostSentences(watch({ precision: 'day' }), coldestHour(''), BANNER);
 
   assert.equal(said.hour, '');
   assert.deepEqual(said.lead, ['Cover your Cherry Tomato in Tomato bed.']);
@@ -381,7 +385,7 @@ test('the hour is a whole sentence when it cannot hang off the opening', () => {
       hardyVarieties: [],
       bedsAtRisk: [bed('Tomato bed', ['Cherry Tomato']), bed('Bed 2', ['Cherry Tomato'])],
     }),
-    '5am',
+    coldestHour('5am'),
     BANNER,
   );
 
@@ -391,24 +395,132 @@ test('the hour is a whole sentence when it cannot hang off the opening', () => {
   assert.doesNotMatch(said.lead.join(' '), /(^|\. )Coldest around/);
 });
 
+/**
+ * The hour is a `ColdestHour`, and the reason it had to become one.
+ *
+ * `frostSentences` builds the preamble itself, into one of two shapes depending
+ * on whether the opening clause still has its em dash free. So the one thing a
+ * caller must never pass is the finished clause — and while the parameter was a
+ * plain `string`, that was also the most obvious thing to pass. A reviewer
+ * building a verification harness did it within an hour of the module landing
+ * and got `it'll be coldest around it'll be coldest around 3am` on the screen.
+ *
+ * Two defences, because one of them would not have caught that:
+ *
+ * * The **brand** stops a TypeScript caller at the keyboard. It would have done
+ *   nothing for the harness, which was a `.mjs` script importing the built
+ *   `.js` — the brand is erased long before that code exists.
+ * * The **runtime guard** inside `frostSentences` is the half that would have.
+ *   It is what these tests mostly exercise, because it is the half that has to
+ *   hold for callers the type system never sees.
+ */
+
+test('a bare hour round-trips through the constructor untouched', () => {
+  assert.equal(coldestHour('5am'), '5am');
+  assert.equal(coldestHour('11pm'), '11pm');
+  assert.equal(
+    frostSentences(watch(), coldestHour('5am'), BANNER).hour,
+    "It'll be coldest around 5am.",
+  );
+});
+
+test('an unknown hour is a normal answer, not an error', () => {
+  const said = frostSentences(watch({ precision: 'day' }), coldestHour(''), BANNER);
+
+  assert.equal(coldestHour(''), '');
+  assert.equal(said.hour, '');
+  // The hour is the only thing lost. The instruction — the part that makes her
+  // go outside — is still a finished sentence.
+  assert.deepEqual(said.lead, ['Cover your Cherry Tomato in Tomato bed.']);
+  assert.match(said.lead.join(' '), /\.$/);
+});
+
+test('the clause that caused this cannot produce a doubled preamble', () => {
+  const said = frostSentences(watch(), coldestHour("it'll be coldest around 3am"), BANNER);
+
+  // The reported bug, exactly: "it'll be coldest around it'll be coldest around 3am".
+  assert.doesNotMatch(said.hour, /coldest around.*coldest around/);
+  assert.doesNotMatch(said.lead.join(' '), /coldest around.*coldest around/);
+  // It degrades to the no-hour wording rather than throwing, because this
+  // banner is currently the only frost warning that reaches her at all.
+  assert.equal(said.hour, '');
+  assert.deepEqual(said.lead, ['Cover your Cherry Tomato in Tomato bed.']);
+});
+
+test('the guard holds for a caller the brand cannot reach', () => {
+  // What the harness actually did: JavaScript, no types, straight into the
+  // built module. The cast is the honest simulation of that — if this only
+  // passed through `coldestHour` it would be testing the wrong half.
+  const asJavaScriptWould = "it'll be coldest around 3am" as unknown as ColdestHour;
+  const said = frostSentences(watch(), asJavaScriptWould, BANNER);
+
+  assert.doesNotMatch(said.lead.join(' '), /coldest around.*coldest around/);
+  assert.deepEqual(said.lead, ['Cover your Cherry Tomato in Tomato bed.']);
+});
+
+test('the discriminator is whitespace, not a format', () => {
+  // A real hour never carries whitespace: both surfaces render it through
+  // `.replace(/\s/g, '')`. Every clause does.
+  assert.equal(isColdestHour('5am'), true);
+  assert.equal(isColdestHour(''), true);
+  assert.equal(isColdestHour('coldest around 3am'), false);
+  assert.equal(isColdestHour('3 am'), false);
+
+  // Not an American-English format check. The banner renders the device's
+  // locale, so a 24-hour or non-English clock is a legitimate hour, and a
+  // pattern built around "5am" would drop it — reintroducing the missing-hour
+  // failure this guard exists to prevent.
+  assert.equal(isColdestHour('17'), true);
+  assert.equal(isColdestHour('5a.m.'), true);
+  assert.equal(isColdestHour('午後5時'), true);
+});
+
+test('the other shapes a bare hour never has are refused too', () => {
+  // A clause with its spaces stripped defeats the whitespace test, so the word
+  // itself is checked as well. Both of these are short enough to clear the
+  // length bound, so it really is the word doing the work here.
+  assert.equal(coldestHour('coldest3am'), '');
+  assert.equal(coldestHour('COLDEST'), '');
+  // An em dash would put a second one in a sentence that already spent its own,
+  // which is the one typographic rule this voice actually has.
+  assert.equal(coldestHour('5am—ish'), '');
+  // Surrounding whitespace is canonicalised rather than refused; a label that
+  // is nothing but whitespace is simply the unknown hour.
+  assert.equal(coldestHour('  5am  '), '5am');
+  assert.equal(coldestHour('   '), '');
+  // A sanity bound, so a runaway label cannot eat the notification's
+  // 200-character budget and cost her a real sentence.
+  assert.equal(coldestHour('5am5am5am5am5am'), '');
+});
+
+test('a refused hour never leaves a dangling dash or a bare fragment', () => {
+  for (const rubbish of ["it'll be coldest around 3am", 'coldest around 3am', '   ', '3 am']) {
+    const text = bannerText(watch({ hardyVarieties: [] }), rubbish);
+
+    assert.equal(text, 'Cover your Cherry Tomato in Tomato bed.');
+    assert.doesNotMatch(text, /—\s*$/);
+    assert.doesNotMatch(text, /(^|\. )Coldest around/);
+  }
+});
+
 /** The squares it cannot speak for. */
 
 test('one unrecorded square is admitted in the singular', () => {
   assert.equal(
-    frostSentences(watch({ unknownSquareCount: 1 }), '5am', BANNER).unrecorded,
+    frostSentences(watch({ unknownSquareCount: 1 }), coldestHour('5am'), BANNER).unrecorded,
     "1 square doesn't have a plant recorded, so it's not included.",
   );
 });
 
 test('several unrecorded squares are admitted in the plural', () => {
   assert.equal(
-    frostSentences(watch({ unknownSquareCount: 3 }), '5am', BANNER).unrecorded,
+    frostSentences(watch({ unknownSquareCount: 3 }), coldestHour('5am'), BANNER).unrecorded,
     "3 squares don't have a plant recorded, so they're not included.",
   );
 });
 
 test('a fully recorded garden says nothing about squares', () => {
-  assert.equal(frostSentences(watch(), '5am', BANNER).unrecorded, '');
+  assert.equal(frostSentences(watch(), coldestHour('5am'), BANNER).unrecorded, '');
 });
 
 /** The headline, which both surfaces now render identically. */

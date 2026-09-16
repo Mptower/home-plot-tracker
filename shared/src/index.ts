@@ -414,6 +414,16 @@ export {
  *
  * Runtime values, imported by both sides, which is only safe because the add-on
  * image ships this package — see the header of `plants.ts`.
+ *
+ * `ColdestHour` and `coldestHour` are exported alongside them because the hour
+ * is the one argument a caller supplies itself, and the one a caller got wrong:
+ * it must be a bare `5am`, never the clause `frostSentences` builds out of it.
  */
-export type { FrostSentences, FrostVoiceOptions } from './frostVoice.js';
-export { frostHeadline, frostSentences, joinNames } from './frostVoice.js';
+export type { ColdestHour, FrostSentences, FrostVoiceOptions } from './frostVoice.js';
+export {
+  coldestHour,
+  frostHeadline,
+  frostSentences,
+  isColdestHour,
+  joinNames,
+} from './frostVoice.js';

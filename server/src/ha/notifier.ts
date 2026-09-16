@@ -56,8 +56,8 @@
  * it does break, the fix is to read `time_zone` from `GET /core/api/config` and
  * format through it explicitly.
  */
-import type { FrostSeverity, FrostWatch } from '@hpt/shared';
-import { frostHeadline, frostSentences } from '@hpt/shared';
+import type { ColdestHour, FrostSeverity, FrostWatch } from '@hpt/shared';
+import { coldestHour, frostHeadline, frostSentences } from '@hpt/shared';
 import type { Database } from '../db/open.ts';
 import { readHaState, writeHaState } from '../db/haState.ts';
 import { SEVERITY_RANK } from './frost.ts';
@@ -186,18 +186,22 @@ export function describeNight(night: string, now: Date): string {
  *
  * The bare hour rather than a finished sentence, because the caller builds it
  * into one of two shapes depending on what the opening clause already spent its
- * punctuation on.
+ * punctuation on. Returned as `ColdestHour` rather than `string` so that stays
+ * true of every caller: handing `frostSentences` the finished clause instead
+ * renders the preamble twice.
  */
-function describeTime(watch: FrostWatch): string {
-  if (watch.precision !== 'hour') return '';
+function describeTime(watch: FrostWatch): ColdestHour {
+  if (watch.precision !== 'hour') return coldestHour('');
 
   const at = new Date(watch.expectedAt);
 
-  if (Number.isNaN(at.getTime())) return '';
+  if (Number.isNaN(at.getTime())) return coldestHour('');
 
   // Ambient clock again: `expectedAt` is an instant, and this renders it as the
   // hour she will read on her own clock. See the note at the top of this file.
-  return at.toLocaleTimeString(undefined, { hour: 'numeric' }).replace(/\s/g, '').toLowerCase();
+  return coldestHour(
+    at.toLocaleTimeString(undefined, { hour: 'numeric' }).replace(/\s/g, '').toLowerCase(),
+  );
 }
 
 /**
