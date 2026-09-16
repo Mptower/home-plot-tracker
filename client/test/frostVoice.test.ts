@@ -533,9 +533,30 @@ test('a refused hour never leaves a dangling dash or a bare fragment', () => {
  * repo deliberately does not carry.
  */
 
+test('en-US still renders whitespace, so the strip is still load-bearing', () => {
+  const raw = new Date('2026-10-11T22:00:00Z').toLocaleTimeString('en-US', { hour: 'numeric' });
+
+  // The premise, asserted rather than assumed. Every other test here is built
+  // on "ICU puts whitespace in a legitimate hour". If a future ICU stops doing
+  // that, this fails loudly and someone re-derives the guard — rather than the
+  // rest of the block quietly passing for the wrong reason while the `.replace`
+  // it pins in two other files becomes cargo nobody can justify.
+  assert.match(
+    raw,
+    /\s/,
+    `en-US no longer renders whitespace (${JSON.stringify(raw)}) — re-derive this guard`,
+  );
+  assert.equal(coldestHour(raw), '', 'unstripped locale output must be refused');
+  assert.ok(
+    isColdestHour(raw.replace(/\s/g, '').toLowerCase()),
+    'stripped locale output must be a valid hour',
+  );
+});
+
 test('an unnormalised locale hour is refused, which is why callers normalise', () => {
-  // A regular space (what `en-US` uses here) and a narrow no-break space (what
-  // ICU uses in other time patterns). `\s` matches both, so both are refused.
+  // A regular space (what `en-US` emits on the Node this was written against)
+  // and a narrow no-break space (what some newer ICU builds emit in other time
+  // patterns). `\s` matches both, so both are refused.
   assert.equal(coldestHour('5 AM'), '');
   assert.equal(coldestHour('5\u202fAM'), '');
   assert.equal(coldestHour('05 Uhr'), '');

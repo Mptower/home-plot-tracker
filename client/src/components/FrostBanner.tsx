@@ -98,6 +98,9 @@ function describeTime(watch: FrostWatch): ColdestHour {
 
   if (Number.isNaN(at.getTime())) return coldestHour('');
 
+  // The `.replace` is load-bearing, not cosmetic: en-US renders "5 AM" and
+  // de-DE "05 Uhr", and `coldestHour` refuses whitespace — so deleting it
+  // silently costs her the hour. Pinned by `client/test/frostVoice.test.ts`.
   return coldestHour(
     at.toLocaleTimeString(undefined, { hour: 'numeric' }).replace(/\s/g, '').toLowerCase(),
   );
