@@ -25,6 +25,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import type { BedAtRisk, ColdestHour, FrostWatch } from '@hpt/shared';
 import { coldestHour, frostHeadline, frostSentences, isColdestHour, joinNames } from '@hpt/shared';
 
@@ -484,6 +485,13 @@ test('the other shapes a bare hour never has are refused too', () => {
   // An em dash would put a second one in a sentence that already spent its own,
   // which is the one typographic rule this voice actually has.
   assert.equal(coldestHour('5am—ish'), '');
+  // The reason this rejects whitespace rather than stripping it. Stripping
+  // would turn a caller's half-trimmed clause into 'around5am' — no whitespace,
+  // inside the length bound, no "coldest" — and render "it'll be coldest around
+  // around5am", a fresh variant of the bug the guard exists for.
+  assert.equal(coldestHour('around 5am'), '');
+  // ...because the stripped form *is* accepted, which is the whole danger.
+  assert.equal(coldestHour('around5am'), 'around5am');
   // Surrounding whitespace is canonicalised rather than refused; a label that
   // is nothing but whitespace is simply the unknown hour.
   assert.equal(coldestHour('  5am  '), '5am');
@@ -500,6 +508,82 @@ test('a refused hour never leaves a dangling dash or a bare fragment', () => {
     assert.equal(text, 'Cover your Cherry Tomato in Tomato bed.');
     assert.doesNotMatch(text, /—\s*$/);
     assert.doesNotMatch(text, /(^|\. )Coldest around/);
+  }
+});
+
+/**
+ * The producers normalise, and that is load-bearing in two other files.
+ *
+ * The guard rejects *any* internal whitespace, and ICU puts whitespace inside a
+ * perfectly legitimate hour: on the Node this was written against, `en-US`
+ * renders `{ hour: 'numeric' }` as `5 AM` and `de-DE` as `05 Uhr`. Handed
+ * either raw, `coldestHour` refuses it and the hour vanishes — the guard
+ * reintroducing, for a whole locale, the failure it exists to prevent.
+ *
+ * What makes it safe is the `.replace(/\s/g, '')` in both `describeTime`
+ * implementations, which runs *before* the constructor. Nothing else states
+ * that dependency, and deleting it reads as tidying, so the tests below are
+ * what stand between "harmless cleanup" and a silently hourless banner.
+ *
+ * The server half is already pinned end-to-end: `ha-notify.test.ts` asserts
+ * whole notification strings under forced `TZ`, and dropping the `.replace`
+ * there fails nine of them. The client half had nothing — removing it left
+ * 178/178 green and the typecheck clean — which is why one of these reads the
+ * source of a component that cannot be rendered without a DOM dependency this
+ * repo deliberately does not carry.
+ */
+
+test('an unnormalised locale hour is refused, which is why callers normalise', () => {
+  // A regular space (what `en-US` uses here) and a narrow no-break space (what
+  // ICU uses in other time patterns). `\s` matches both, so both are refused.
+  assert.equal(coldestHour('5 AM'), '');
+  assert.equal(coldestHour('5\u202fAM'), '');
+  assert.equal(coldestHour('05 Uhr'), '');
+});
+
+test('every locale ICU actually produces survives the documented normalisation', () => {
+  const at = new Date('2026-10-11T10:00:00Z');
+
+  for (const locale of ['en-US', 'en-GB', 'de-DE', 'ja-JP']) {
+    const raw = at.toLocaleTimeString(locale, { hour: 'numeric', timeZone: 'America/Chicago' });
+    // Exactly what both `describeTime` implementations do.
+    const hour = coldestHour(raw.replace(/\s/g, '').toLowerCase());
+
+    assert.notEqual(hour, '', `${locale} lost its hour: ${JSON.stringify(raw)}`);
+    assert.match(
+      frostSentences(watch(), hour, BANNER).hour,
+      /^It'll be coldest around .+\.$/,
+      `${locale} did not produce an hour sentence`,
+    );
+  }
+});
+
+test('both surfaces still strip whitespace before constructing the hour', () => {
+  // A source assertion, not a behavioural one, and deliberately so: the two
+  // `describeTime`s are private to a Node module and a React component, and the
+  // only behavioural route to the client's is a DOM test this repo has decided
+  // not to take a dependency for. The invariant is worth more than the purity
+  // of the test that holds it.
+  const producers = [
+    ['client/src/components/FrostBanner.tsx', '../src/components/FrostBanner.tsx'],
+    ['server/src/ha/notifier.ts', '../../server/src/ha/notifier.ts'],
+  ] as const;
+
+  for (const [label, relative] of producers) {
+    const source = readFileSync(new URL(relative, import.meta.url), 'utf8');
+    const start = source.indexOf('function describeTime(');
+
+    assert.notEqual(start, -1, `no describeTime in ${label}`);
+
+    const body = source.slice(start, source.indexOf('\n}', start));
+
+    assert.match(
+      body,
+      /\.replace\(\/\\s\/g, ''\)/,
+      `${label} stopped stripping whitespace before building a ColdestHour — ` +
+        "en-US renders '5 AM' and the guard will refuse it, so her banner loses the hour",
+    );
+    assert.match(body, /coldestHour\(/, `${label} stopped going through coldestHour`);
   }
 });
 

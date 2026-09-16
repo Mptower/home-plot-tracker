@@ -96,11 +96,39 @@ export type ColdestHour = string & { readonly [COLDEST_HOUR]: 'ColdestHour' };
  * `coldest` check is the belt to that braces: it catches a clause that has had
  * its spaces stripped, which is the one way the first test can be fooled.
  *
+ * ## Callers must normalise before constructing. That is not optional
+ *
+ * ICU puts whitespace inside a perfectly legitimate hour: `en-US` renders
+ * `5 AM` and `de-DE` renders `05 Uhr`. Handed either of those raw, this rejects
+ * it and the hour is silently dropped — the guard reintroducing, for a whole
+ * locale, the exact failure it exists to prevent. What makes that safe is the
+ * `.replace(/\s/g, '')` in **both** `describeTime` implementations
+ * (`server/src/ha/notifier.ts`, `client/src/components/FrostBanner.tsx`), which
+ * runs before `coldestHour` ever sees the string.
+ *
+ * So that `.replace` is load-bearing in two other files, and deleting it looks
+ * exactly like tidying. `client/test/frostVoice.test.ts` pins it in both of
+ * them; do not remove it there either.
+ *
+ * ## Why this does not simply strip the whitespace itself
+ *
+ * That is the obvious simplification, it would make the callers' `.replace`
+ * redundant, and it is actively worse. Stripping here turns the misuse
+ * `'around 5am'` into `'around5am'`, which carries no whitespace, is not long
+ * enough to trip the bound and does not contain "coldest" — so it sails through
+ * and renders `it'll be coldest around around5am`. That is a *new* variant of
+ * the exact bug this guard exists for, reachable from the same mistake by a
+ * caller who trimmed the first two words off. Rejecting whitespace catches
+ * strictly more than normalising it, so the normalising belongs upstream in the
+ * two places that know they are formatting a clock.
+ *
  * Deliberately *not* a format like `/^\d{1,2}(am|pm)$/`. The banner renders the
  * device's locale, so a 24-hour or non-English clock produces `17` or `午後5時`,
  * and a pattern written around American English would quietly drop the hour for
- * anyone it had not anticipated — the failure this guard exists to prevent,
- * reintroduced by the guard itself.
+ * anyone it had not anticipated — the same failure, from the other direction.
+ * `de-DE` is the one that makes this concrete: it renders `05 Uhr`, so a guard
+ * narrowed to the AM/PM shape would break German while still passing a test
+ * written only against `en-US`.
  */
 const NOT_A_BARE_HOUR = /\s|—|coldest/i;
 
