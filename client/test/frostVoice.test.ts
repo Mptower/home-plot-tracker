@@ -297,8 +297,70 @@ test('nothing at risk is coherent even though no surface shows it', () => {
   assert.equal(said.action, "Nothing you've planted should mind a night this cold.");
 });
 
-/** The hour, and the honesty about not knowing it. */
+/**
+ * Her actual garden.
+ *
+ * Not a hypothetical. As of this morning the live install holds one seed packet
+ * (`Cherry Tomato`), one 3x6 bed (`Tomato bed`) with exactly two squares
+ * planted, both reading `Cherry Tomato`, and one harvest row. Every other test
+ * in this file describes a garden she does not have yet, and the overflow cases
+ * describe one she may never have — so the simplest shape is the one that has
+ * to be right, because it is the only banner she is going to see.
+ *
+ * It matters more than it looks: her frost notifications are switched off, so
+ * this banner is currently the *only* frost warning that reaches her at all.
+ */
+test('her real garden — one crop, one bed, two squares — reads as a sentence', () => {
+  const hers = watch({
+    // Two squares, one distinct variety, so the singular has to hold.
+    bedsAtRisk: [bed('Tomato bed', ['Cherry Tomato'])],
+    tenderVarieties: ['Cherry Tomato'],
+    hardyVarieties: [],
+    unknownSquareCount: 0,
+  });
 
+  assert.equal(
+    bannerText(hers, '3am'),
+    "Cover your Cherry Tomato in Tomato bed — it'll be coldest around 3am.",
+  );
+
+  // One sentence, one dash, nothing dangling, and no list machinery showing
+  // through on a garden with nothing to list.
+  assert.equal(bannerText(hers, '3am').split('—').length - 1, 1);
+  assert.doesNotMatch(bannerText(hers, '3am'), /and \d+ more|spread across|,/);
+});
+
+test('her real garden under a hard freeze picks rather than covers', () => {
+  const hers = watch({
+    severity: 'hard_freeze',
+    lowF: 24,
+    bedsAtRisk: [bed('Tomato bed', ['Cherry Tomato'])],
+    tenderVarieties: ['Cherry Tomato'],
+    hardyVarieties: [],
+  });
+
+  assert.equal(
+    bannerText(hers, '5am'),
+    "Pick what you can from your Cherry Tomato in Tomato bed — it'll be coldest around 5am. " +
+      "A cover won't be enough this cold.",
+  );
+  // Nothing hardy in the ground, so there is no aside to make — and inventing
+  // one would name a crop she has not planted.
+  assert.equal(frostSentences(hers, '5am', BANNER).aside, '');
+});
+
+test('her real garden with a daily forecast still finishes its sentence', () => {
+  const hers = watch({
+    precision: 'day',
+    bedsAtRisk: [bed('Tomato bed', ['Cherry Tomato'])],
+    tenderVarieties: ['Cherry Tomato'],
+    hardyVarieties: [],
+  });
+
+  assert.equal(bannerText(hers, ''), 'Cover your Cherry Tomato in Tomato bed.');
+});
+
+/** The hour, and the honesty about not knowing it. */
 test('an hourly forecast names the hour', () => {
   assert.equal(frostSentences(watch(), '5am', BANNER).hour, "It'll be coldest around 5am.");
 });
