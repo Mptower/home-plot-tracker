@@ -56,7 +56,7 @@ test('her actual row is spotted, with the frost consequence attached', () => {
   assert.equal(fix?.storedTenderness, 'hardy');
   assert.equal(fix?.suggestedTenderness, 'tender');
   // This is the whole reason the nudge exists.
-  assert.equal(fix?.changesFrostAdvice, true);
+  assert.equal(fix?.frostTreatmentDiffers, true);
 });
 
 test('a packet already filed correctly is left alone', () => {
@@ -119,7 +119,7 @@ test('a compound variety resolves through the same matcher the form uses', () =>
   assert.equal(fix?.plantName, 'Grape Tomato');
 });
 
-test('fixes that change the frost advice are offered first', () => {
+test('fixes the frost engine treats differently are offered first', () => {
   const fixes = findCategoryFixes([
     // Brassica and Root are both hardy: real, but not urgent.
     packet({ id: 'seed_radish', variety: 'Radish', category: 'Brassica' }),
@@ -130,7 +130,7 @@ test('fixes that change the frost advice are offered first', () => {
     fixes.map((fix) => fix.variety),
     ['Cherry Tomato', 'Radish'],
   );
-  assert.equal(fixes[1]?.changesFrostAdvice, false);
+  assert.equal(fixes[1]?.frostTreatmentDiffers, false);
 });
 
 test('dismissing one disagreement hides exactly that one', () => {
@@ -190,7 +190,14 @@ test('applying a fix for a packet that has since gone changes nothing', () => {
 
 test('the explanation names the consequence, not the taxonomy', () => {
   const [tender] = findCategoryFixes([packet()]);
-  assert.match(explainCategoryFix(tender!), /not being warned/);
+  // The sentence this used to make — "so you are not being warned about this
+  // one" — is no longer true, because the frost engine cross-checks the name and
+  // errs towards tender. The banner has to say what is actually the case, which
+  // is that the warning is leaning on the plant's name rather than her records,
+  // and that the rotation reminder still believes the filing.
+  assert.match(explainCategoryFix(tender!), /still warned about this one/);
+  assert.doesNotMatch(explainCategoryFix(tender!), /not being warned/);
+  assert.match(explainCategoryFix(tender!), /rotation reminder/);
 
   const [hardy] = findCategoryFixes([
     packet({ id: 'seed_kale', variety: 'Kale', category: 'Nightshade' }),

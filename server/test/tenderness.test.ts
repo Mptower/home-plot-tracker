@@ -24,11 +24,13 @@ import {
   CATEGORY_TENDERNESS as SHARED_CATEGORY_TENDERNESS,
   SEED_CATEGORIES,
   isKnownTendernessCategory as sharedIsKnown,
+  moreTender as sharedMoreTender,
   tendernessOf as sharedTendernessOf,
 } from '@hpt/shared';
 import {
   CATEGORY_TENDERNESS,
   isKnownTendernessCategory,
+  moreTender,
   tendernessOf,
 } from '../src/ha/tenderness.ts';
 
@@ -38,6 +40,27 @@ test('the frost engine and the browser share one map object, not two that agree'
   assert.equal(CATEGORY_TENDERNESS, SHARED_CATEGORY_TENDERNESS);
   assert.equal(tendernessOf, sharedTendernessOf);
   assert.equal(isKnownTendernessCategory, sharedIsKnown);
+  assert.equal(moreTender, sharedMoreTender);
+});
+
+test('the cautious answer wins, and unknown is not one', () => {
+  // The direction the frost engine's safety bias is allowed to travel in. Every
+  // pair, both ways round, because an ordering that is only right when its
+  // arguments arrive in the lucky order is not an ordering.
+  assert.equal(moreTender('hardy', 'tender'), 'tender');
+  assert.equal(moreTender('tender', 'hardy'), 'tender');
+
+  // `unknown` means nothing placed this plant, not "might be tender". Promoting
+  // it would turn every unrecognised square into a warning, which is the thing
+  // that teaches her to ignore warnings.
+  assert.equal(moreTender('unknown', 'hardy'), 'hardy');
+  assert.equal(moreTender('hardy', 'unknown'), 'hardy');
+  assert.equal(moreTender('unknown', 'tender'), 'tender');
+  assert.equal(moreTender('tender', 'unknown'), 'tender');
+
+  assert.equal(moreTender('unknown', 'unknown'), 'unknown');
+  assert.equal(moreTender('hardy', 'hardy'), 'hardy');
+  assert.equal(moreTender('tender', 'tender'), 'tender');
 });
 
 test('every category the app offers is one the map has an answer for', () => {

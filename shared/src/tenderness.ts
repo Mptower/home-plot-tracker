@@ -90,3 +90,35 @@ export function tendernessOf(category: string | null | undefined): Tenderness {
 export function isKnownTendernessCategory(category: string | null | undefined): boolean {
   return typeof category === 'string' && Object.hasOwn(CATEGORY_TENDERNESS, category);
 }
+
+/**
+ * How cautious each answer is. Only ever used for ordering, never persisted.
+ *
+ * `unknown` sits at the bottom rather than the top on purpose. It does not mean
+ * "might be tender, be careful" — it means nothing placed this plant at all, and
+ * a warning about a square nobody can name is a warning she learns to distrust.
+ */
+const TENDERNESS_RANK: Readonly<Record<Tenderness, number>> = {
+  unknown: 0,
+  hardy: 1,
+  tender: 2,
+};
+
+/**
+ * The more cautious of two readings of the same plant.
+ *
+ * The frost engine uses this to reconcile the category on a seed packet with the
+ * one the plant catalogue is certain of, and the direction is the entire point:
+ * a disagreement may only ever move a plant from hardy towards tender. The two
+ * mistakes are not the same size. Believing a tomato is hardy costs the crop on
+ * a night the forecast already saw coming; believing kale is tender costs a walk
+ * outside with a bedsheet.
+ *
+ * Because `unknown` ranks lowest, it is never *promoted* by this: a plant
+ * nothing can place stays unplaced and stays silent. See
+ * `server/src/ha/varietyCategory.ts` for what is being compared, and why only an
+ * exact catalogue match is allowed to have an opinion.
+ */
+export function moreTender(left: Tenderness, right: Tenderness): Tenderness {
+  return TENDERNESS_RANK[right] > TENDERNESS_RANK[left] ? right : left;
+}

@@ -8,8 +8,10 @@
  * one record, and the app is asking rather than telling.
  *
  * Every offer shows what it would change, and what that change is worth. The
- * frost sentence is the point: "filed as a Leafy Green, which is treated as
- * frost-hardy, so you are not being warned about it" is a reason. "Tomatoes are
+ * frost sentence is the point, and it is deliberately not a scare: the engine
+ * already errs towards tender for a plant it recognises by name, so what is on
+ * offer here is her records agreeing with the warning she is getting, and a
+ * rotation reminder that knows what actually grew in that bed. "Tomatoes are
  * nightshades" is trivia.
  */
 import { Check, Wand2, X } from 'lucide-react';
@@ -41,9 +43,9 @@ export function CategoryFixBanner({ fixes, onApply, onDismiss }: CategoryFixBann
           : `${fixes.length} packets look filed under the wrong category`}
       </h3>
       <p className="mt-1 text-sm leading-relaxed text-indigo-800">
-        Nothing has been changed. The category decides how the frost warning treats a plant, so
-        these are worth a look — but they are your records, and these buttons are the only thing
-        that will touch them.
+        Nothing has been changed. The category is what the rotation reminder counts and what the
+        frost warning starts from, so these are worth a look — but they are your records, and these
+        buttons are the only thing that will touch them.
       </p>
 
       <ul className="mt-4 space-y-2">

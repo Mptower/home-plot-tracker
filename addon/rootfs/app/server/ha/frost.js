@@ -1,5 +1,5 @@
-import { FROST_THRESHOLDS_F, tendernessOf } from "./tenderness.js";
-import { buildCategoryLookup } from "./varietyCategory.js";
+import { FROST_THRESHOLDS_F } from "./tenderness.js";
+import { buildTendernessLookup } from "./varietyCategory.js";
 /** Rank for comparing bands. Only ever used for ordering, never persisted. */
 export const SEVERITY_RANK = {
     none: 0,
@@ -46,8 +46,16 @@ export function nightOf(at, precision) {
         night.setDate(night.getDate() - 1);
     return toLocalIsoDate(night);
 }
-/** Distinct planted varieties in a bed, bucketed by how they take a frost. */
-function tallyBed(bed, categoryOf) {
+/**
+ * Distinct planted varieties in a bed, bucketed by how they take a frost.
+ *
+ * Takes a tenderness resolver rather than a category one, because that is the
+ * only thing this file has any business knowing. Which crop family a square
+ * belongs to is her record to keep; how cold it can get before it dies is the
+ * question being asked here, and `buildTendernessLookup` is allowed to answer it
+ * more cautiously than her filing does.
+ */
+function tallyBed(bed, tendernessAt) {
     const seen = new Map();
     let unknownSquares = 0;
     // The raw layout is walked defensively rather than through `rows`/`columns`.
@@ -60,7 +68,7 @@ function tallyBed(bed, categoryOf) {
             const variety = cell.trim();
             if (variety === '')
                 continue;
-            const tenderness = tendernessOf(categoryOf(variety));
+            const tenderness = tendernessAt(variety);
             if (tenderness === 'unknown')
                 unknownSquares += 1;
             if (!seen.has(variety))
@@ -119,8 +127,8 @@ export function assessFrostRisk(input) {
         ? candidate
         : best);
     const band = severityFor(coldest.lowF);
-    const categoryOf = buildCategoryLookup(input.seeds);
-    const tallies = input.beds.map((bed) => tallyBed(bed, categoryOf));
+    const tendernessAt = buildTendernessLookup(input.seeds);
+    const tallies = input.beds.map((bed) => tallyBed(bed, tendernessAt));
     // What counts as "at risk" depends on the band. Below 28°F the hardy crops
     // are in trouble too, so any planted bed is named. Above that, only tender
     // plantings are. An `unknown` planting never puts a bed on the list by

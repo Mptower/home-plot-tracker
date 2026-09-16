@@ -2,16 +2,25 @@
  * Offering to fix a packet that was filed under the wrong family.
  *
  * Her cherry tomato is sitting in the database as a Leafy Green. The frost
- * engine reads Leafy Green as hardy, so her tomatoes are not being warned
- * about, four weeks out from first frost. The catalogue knows better — but
- * knowing better is not permission to go and rewrite her records.
+ * engine used to read Leafy Green as hardy and say nothing, four weeks out from
+ * first frost; it now cross-checks an exact catalogue match and takes the more
+ * tender of the two readings, so that particular silence is covered. See
+ * `server/src/ha/varietyCategory.ts`.
  *
- * So nothing here changes anything. `findCategoryFixes` reports what looks
- * wrong; the banner shows it with the consequence spelled out; and the change
- * only happens when she clicks. A migration that quietly reclassified her
- * packets on upgrade would have fixed the frost warning and broken something
- * much more expensive, which is her belief that the app leaves her records
- * alone.
+ * That is a safety net, not a reason to stop asking. The net only reaches names
+ * the catalogue knows outright — rename the packet to something it cannot place
+ * and the tomato goes quiet again — and it deliberately produces no category, so
+ * everything a category actually *is* still reads the wrong one: the colour on
+ * the chip, the plant shown in the vault, and the crop rotation reminder, which
+ * is a statement about which family grew in that bed and cannot be guessed at
+ * from a frost warning. The row is still wrong. This is still how it gets fixed.
+ *
+ * And knowing better is not permission to go and rewrite her records. Nothing
+ * here changes anything. `findCategoryFixes` reports what looks wrong; the
+ * banner shows it with the consequence spelled out; and the change only happens
+ * when she clicks. A migration that quietly reclassified her packets on upgrade
+ * would have fixed the frost warning and broken something much more expensive,
+ * which is her belief that the app leaves her records alone.
  *
  * Dismissal is keyed on the variety *and* the category it is filed under, so
  * waving the nudge away is a judgement about one specific disagreement. If she
@@ -54,12 +63,16 @@ export interface CategoryFix {
   storedTenderness: Tenderness;
   suggestedTenderness: Tenderness;
   /**
-   * Whether accepting changes what the frost engine does about this plant.
+   * Whether the two categories are treated differently by the frost engine.
    *
-   * This is the difference between a tidying-up suggestion and a warning she
-   * is not getting, and the banner leads with the latter.
+   * This is the difference between a tidying-up suggestion and a disagreement
+   * with a deadline, and the banner leads with the latter. It is not a promise
+   * that accepting changes the warning: where the catalogue's answer is the
+   * tender one, the frost engine has already taken it, and what accepting
+   * changes is everything else the category drives. Where hers is the tender
+   * one, accepting really does stop a warning she does not need.
    */
-  changesFrostAdvice: boolean;
+  frostTreatmentDiffers: boolean;
 }
 
 /**
@@ -81,8 +94,8 @@ export function categoryFixKey(variety: string, storedCategory: string): string 
  * answer when you do not know, and a substring match is not knowing (see the
  * header).
  *
- * Ordered so the ones that change frost advice come first, because those are
- * the ones with a deadline.
+ * Ordered so the ones the frost engine treats differently come first, because
+ * those are the ones with a deadline behind them.
  */
 export function findCategoryFixes(
   seeds: readonly SeedPacket[],
@@ -112,13 +125,13 @@ export function findCategoryFixes(
       suggestedCategory: match.entry.category,
       storedTenderness,
       suggestedTenderness,
-      changesFrostAdvice: storedTenderness !== suggestedTenderness,
+      frostTreatmentDiffers: storedTenderness !== suggestedTenderness,
     });
   }
 
   return fixes.sort(
     (left, right) =>
-      Number(right.changesFrostAdvice) - Number(left.changesFrostAdvice) ||
+      Number(right.frostTreatmentDiffers) - Number(left.frostTreatmentDiffers) ||
       left.variety.localeCompare(right.variety),
   );
 }
@@ -137,14 +150,24 @@ export function applyCategoryFix(seeds: readonly SeedPacket[], fix: CategoryFix)
   );
 }
 
-/** Plain-language reason this particular fix is worth her attention. */
+/**
+ * Plain-language reason this particular fix is worth her attention.
+ *
+ * The tender direction no longer says "you are not being warned about this one",
+ * because since the frost engine started cross-checking exact catalogue matches
+ * she is. Saying it anyway would be the banner's one job — telling her the truth
+ * about what her records are doing — done wrong. The honest version is smaller
+ * and still a reason: the warning is leaning on the plant's name rather than on
+ * what she filed, and everything that is not a frost warning is still reading
+ * the filing.
+ */
 export function explainCategoryFix(fix: CategoryFix): string {
-  if (!fix.changesFrostAdvice) {
+  if (!fix.frostTreatmentDiffers) {
     return `Both are treated the same way for frost. This only tidies up the colour and the rotation reminder.`;
   }
 
   return fix.suggestedTenderness === 'tender'
-    ? `${fix.storedCategory} is treated as frost-hardy, so you are not being warned about this one. ${fix.suggestedCategory} is tender.`
+    ? `${fix.storedCategory} is treated as frost-hardy. You are still warned about this one, because the frost check recognises the name and errs towards tender — but it is the name carrying that, not your records, and the rotation reminder still counts this bed as ${fix.storedCategory}.`
     : `${fix.storedCategory} is treated as tender, so this one is being warned about when it does not need to be. ${fix.suggestedCategory} shrugs off a frost.`;
 }
 

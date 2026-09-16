@@ -1,4 +1,4 @@
-import { categoryForVariety, isKnownTendernessCategory, normalizePlantName, plantLookupKeys, } from '@hpt/shared';
+import { categoryForVariety, isKnownTendernessCategory, matchPlant, moreTender, normalizePlantName, plantLookupKeys, tendernessOf, } from '@hpt/shared';
 /**
  * Every tolerant spelling of a seed packet's variety name.
  *
@@ -64,6 +64,38 @@ export function buildCategoryLookup(seeds) {
         if (normalized === '')
             return null;
         return tolerant.get(normalized) ?? categoryForVariety(variety);
+    };
+}
+/**
+ * How a bed square takes a frost, erring towards the tender answer.
+ *
+ * The frost engine's resolver, and the only caller of it. Everything else in the
+ * app asks `buildCategoryLookup` and gets the category she filed, unchanged.
+ *
+ * Her filing is resolved exactly as it always was, and then — and only then —
+ * checked against the catalogue's opinion of the same square. The catalogue only
+ * gets a vote when it recognises the *whole* name, because overruling her
+ * deserves a higher bar than filling in a blank and the substring matcher does
+ * not clear it. When both have an answer and they disagree, the more tender one
+ * wins.
+ *
+ * Note what this does *not* do. It cannot talk the frost engine out of a
+ * warning: where she has filed something tender and the catalogue disagrees,
+ * `moreTender` has no way to travel back. It does not invent a reading for a
+ * square nothing places. And it hands back no category at all, which is what
+ * keeps crop rotation reading her records rather than this file's opinion of
+ * them.
+ */
+export function buildTendernessLookup(seeds) {
+    const categoryOf = buildCategoryLookup(seeds);
+    return (variety) => {
+        const filed = tendernessOf(categoryOf(variety));
+        const match = matchPlant(variety);
+        // A `contains` match is a guess about which word in the name is the plant,
+        // and a guess is not grounds for overriding something she typed herself.
+        if (match === null || match.confidence !== 'exact')
+            return filed;
+        return moreTender(filed, tendernessOf(match.entry.category));
     };
 }
 //# sourceMappingURL=varietyCategory.js.map

@@ -389,13 +389,17 @@ export {
  *
  * The single copy. The frost warnings come from here by way of
  * `server/src/ha/tenderness.ts`, which re-exports it, and the seed vault uses
- * it to explain *why* a miscategorised packet matters — "this one is filed as
- * something the frost engine treats as hardy, so you are not being warned about
- * it". There is no second copy to drift.
+ * it to explain *why* a miscategorised packet matters — that this one is filed
+ * as something the frost engine would otherwise treat as hardy. There is no
+ * second copy to drift.
+ *
+ * `moreTender` is the ordering over those answers, and lives beside the map for
+ * the same reason: one map, one direction of travel.
  */
 export {
   CATEGORY_TENDERNESS,
   isKnownTendernessCategory,
+  moreTender,
   tendernessOf,
 } from './tenderness.js';
 
