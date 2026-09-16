@@ -57,6 +57,7 @@
  * format through it explicitly.
  */
 import type { FrostSeverity, FrostWatch } from '@hpt/shared';
+import { frostHeadline, frostSentences } from '@hpt/shared';
 import type { Database } from '../db/open.ts';
 import { readHaState, writeHaState } from '../db/haState.ts';
 import { SEVERITY_RANK } from './frost.ts';
@@ -151,28 +152,6 @@ export function inQuietHours(now: Date, startMinutes: number, endMinutes: number
     : minutes >= startMinutes || minutes < endMinutes;
 }
 
-/** English list: `a`, `a and b`, `a, b and c`, `a, b, c and 2 more`. */
-function joinNames(names: readonly string[], limit = 3): string {
-  const shown = names.slice(0, limit);
-  const extra = names.length - shown.length;
-
-  if (shown.length === 0) return '';
-
-  // With an overflow the whole list goes comma-separated and "and 2 more" is
-  // the final item, so it never reads "Basil and Cherokee Purple and 2 more".
-  if (extra > 0) return `${shown.join(', ')} and ${extra} more`;
-  if (shown.length === 1) return shown[0]!;
-
-  return `${shown.slice(0, -1).join(', ')} and ${shown.at(-1)}`;
-}
-
-const SEVERITY_WORD: Record<FrostSeverity, string> = {
-  none: 'Cold',
-  advisory: 'Frost possible',
-  frost: 'Frost',
-  hard_freeze: 'Hard freeze',
-};
-
 /**
  * "Saturday night" rather than "2026-10-11".
  *
@@ -222,31 +201,6 @@ function describeTime(watch: FrostWatch): string {
 }
 
 /**
- * What she should actually do about it, by band.
- *
- * The verb changes at a hard freeze on purpose. A bedsheet over a tomato buys
- * two or three degrees, which is the whole point of the 36°F advisory band and
- * still worth doing at 31°F. At 24°F it saves nothing, and an instruction she
- * finds false in the morning costs more than one she never got — so below the
- * hard-freeze threshold the honest advice is to take off what is worth keeping.
- */
-const ACTION_VERB: Readonly<Record<FrostSeverity, string>> = {
-  none: '',
-  advisory: 'Cover your',
-  frost: 'Cover your',
-  hard_freeze: 'Pick what you can from your',
-};
-
-/**
- * Past this many beds the names stop being useful.
- *
- * Two or three she can picture; at five she is going out to the whole garden
- * anyway, and a count is both shorter and truer than a list with "and 2 more"
- * on the end of it.
- */
-const BED_NAME_LIMIT = 3;
-
-/**
  * Where a message stops being read.
  *
  * Not a platform limit — the real one is the *collapsed* lock screen, which
@@ -255,128 +209,61 @@ const BED_NAME_LIMIT = 3;
  * crop names is what handles it. This is the softer limit that stops the
  * expanded view turning into a paragraph, and it only bites on a garden with
  * more beds than she has.
+ *
+ * This, and the order things are given up in, is all that is left of the
+ * wording in this file. The sentences themselves come from
+ * `frostSentences` in `@hpt/shared`, so the banner she reads indoors says the
+ * same things in the same voice; what stays here is the pressure a lock screen
+ * puts on them, which the banner does not share.
  */
 const MESSAGE_MAX_CHARS = 200;
 
-/** Said when there is genuinely nothing to do. */
-const NOTHING_MINDS = "Nothing you've planted should mind a night this cold.";
-
 /**
- * The words.
+ * The words, under the pressure a lock screen puts on them.
  *
- * A frost warning exists to make someone go outside with a bedsheet, so it
- * opens with the instruction. Lock screens truncate and the first clause is the
- * only part guaranteed to be read, which means the verb and the crop names have
- * to be in it. Then which beds, because naming *her* plants is the entire
- * difference between this and the weather app she already has; then the
- * reassuring half, so it reads as information rather than alarm; then an
- * admission of anything it could not classify.
+ * The sentences are no longer written here. They come from `frostSentences` in
+ * `@hpt/shared`, which the banner composes from too, because two surfaces
+ * describing the same cold night in two voices is the seam this stopped being
+ * worth maintaining. What a notification adds on top is *scarcity*: a fixed
+ * order to lead with, and a ceiling that gives sentences up when the garden has
+ * more in it than a lock screen can show.
  *
- * No botanical vocabulary. She does not have to know what a nightshade is to
- * use the rest of this app, and she should not have to know what "tender" means
- * to read her phone at ten at night.
+ * So what is decided here is only ever what to keep:
  *
- * The hedges are deliberate and stay. "Should be fine", not "will be fine":
- * this is a forecast, and over-promising in a frost warning costs a crop.
+ * * The instruction, the crop names, where they are and when it will be
+ *   coldest are never dropped. They are the reason it was sent.
+ * * The admission about unrecorded squares goes first, being the least
+ *   actionable thing in the message.
+ * * Then the hard-freeze aside and the reassurance, in that order.
  *
- * One em dash per message, at most. It carries the bed list when there is more
- * than one bed, and the coldest hour otherwise — two of them in one sentence is
- * where the old wording lost her ("… in Tomato bed and Bed 2 are tender").
+ * The three-name and three-bed economies are the shared defaults, which were
+ * written for this surface; the banner opts out of both.
  */
 export function composeNotification(
   watch: FrostWatch,
   now: Date,
 ): { title: string; message: string } {
-  const when = describeNight(watch.night, now);
-  const title = `${SEVERITY_WORD[watch.severity]} ${when} — ${Math.round(watch.lowF)}°F`;
-
-  const bedNames = watch.bedsAtRisk
-    .filter((bed) => bed.tender.length > 0)
-    .map((bed) => bed.bedName);
-  const crops = joinNames(watch.tenderVarieties);
-  const hardy = joinNames(watch.hardyVarieties);
-  const hour = describeTime(watch);
-
-  /** True while the opening is an unfinished clause the hour can hang off. */
-  let openClause = false;
-  let opening: string;
-
-  if (watch.severity !== 'none' && crops !== '') {
-    const verb = ACTION_VERB[watch.severity];
-    const they = watch.tenderVarieties.length === 1 ? "it's" : "they're";
-
-    if (bedNames.length === 0) {
-      opening = `${verb} ${crops}`;
-      openClause = true;
-    } else if (bedNames.length === 1) {
-      // One bed is unambiguous inline, and it leaves the dash free for the hour.
-      opening = `${verb} ${crops} in ${bedNames[0]}`;
-      openClause = true;
-    } else if (bedNames.length <= BED_NAME_LIMIT) {
-      opening = `${verb} ${crops} — ${they} in ${joinNames(bedNames, BED_NAME_LIMIT)}.`;
-    } else {
-      opening = `${verb} ${crops} — ${they} spread across ${bedNames.length} beds.`;
-    }
-  } else if (watch.severity === 'hard_freeze') {
-    opening =
-      hardy === ''
-        ? "It's cold enough to damage anything still in the ground."
-        : `It's cold enough to damage even your ${hardy}.`;
-  } else {
-    // Nothing tender in the ground and not a hard freeze, so there is nothing
-    // to ask of her. `decideNotification` stops well short of here — both
-    // `severity: 'none'` and an empty tender list are refused before the words
-    // are ever composed — but this is exported, and dead wording rots.
-    opening = NOTHING_MINDS;
-  }
-
-  /** The hour fuses onto the opening when the dash is still free. */
-  const fuseHour = openClause && hour !== '';
-
-  const parts: string[] = [];
-
-  if (fuseHour) parts.push(`${opening} — it'll be coldest around ${hour}.`);
-  else parts.push(openClause ? `${opening}.` : opening);
-
-  if (!fuseHour && hour !== '') parts.push(`It'll be coldest around ${hour}.`);
+  const title = frostHeadline(watch, describeNight(watch.night, now));
+  const sentences = frostSentences(watch, describeTime(watch));
 
   /** Given up from the end when the message runs long. Least useful last. */
-  const optional: string[] = [];
+  const optional = [
+    // The caveat says why a hard freeze did not just tell her to cover them, so
+    // it outlives the aside it explains.
+    sentences.caveat,
+    sentences.aside,
+    sentences.reassurance,
+    sentences.unrecorded,
+  ].filter((sentence) => sentence !== '');
 
-  if (watch.severity === 'hard_freeze' && crops !== '') {
-    // Says why it did not just tell her to cover them.
-    optional.push("A cover won't be enough this cold.");
-    if (hardy !== '') optional.push(`Even the ${hardy} may take damage.`);
-  } else if (
-    watch.severity !== 'hard_freeze' &&
-    watch.severity !== 'none' &&
-    hardy !== '' &&
-    crops !== ''
-  ) {
-    optional.push(`The ${hardy} should be fine.`);
-  }
-
-  if (watch.unknownSquareCount > 0) {
-    const squares = watch.unknownSquareCount;
-
-    optional.push(
-      squares === 1
-        ? "1 square doesn't have a plant recorded, so it's not included."
-        : `${squares} squares don't have a plant recorded, so they're not included.`,
-    );
-  }
-
-  // Trimmed from the end: the unrecorded squares go first, then the reassurance
-  // or the hard-freeze aside. The instruction, the crop names and the hour are
-  // never dropped — they are the reason the notification was sent.
   while (
     optional.length > 0 &&
-    [...parts, ...optional].join(' ').length > MESSAGE_MAX_CHARS
+    [...sentences.lead, ...optional].join(' ').length > MESSAGE_MAX_CHARS
   ) {
     optional.pop();
   }
 
-  return { title, message: [...parts, ...optional].join(' ') };
+  return { title, message: [...sentences.lead, ...optional].join(' ') };
 }
 
 export interface NotifyOptions {
