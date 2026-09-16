@@ -13,11 +13,13 @@ import type { GardenBed, HarvestLog, SeedPacket, ViewId } from '@hpt/shared';
 import type { GardenStatus } from './hooks/useGardenData';
 
 export type {
+  BackupStatusBody,
   BedAtRisk,
   CollectionName,
   ForecastPrecision,
   FrostSeverity,
   FrostWatch,
+  GardenBackupDocument,
   GardenBed,
   GardenSettings,
   GardenSnapshot,
@@ -26,6 +28,8 @@ export type {
   IntegrationStatusBody,
   PlantCatalogueEntry,
   PlantMatch,
+  RestoreResultBody,
+  SafetyCopySummary,
   SeedPacket,
   Tenderness,
   ViewId,

@@ -25,6 +25,18 @@ export type ApiErrorCode =
   | 'unsupported_media_type'
   | 'malformed_json'
   | 'payload_too_large'
+  /**
+   * A file that is well-formed and readable but is not something this build can
+   * apply: a backup written by a newer version, or a JSON file that belongs to
+   * some other program entirely.
+   *
+   * Separate from `validation_failed` because the two need different words in
+   * front of a person. "Your file has a problem at harvests[3].date" invites
+   * her to go and fix it; saying that about a backup from a newer version of
+   * the app would send her editing JSON to repair something that was never
+   * broken.
+   */
+  | 'unsupported_backup'
   | 'internal_error';
 
 export interface ErrorBody {
