@@ -398,3 +398,18 @@ export {
   isKnownTendernessCategory,
   tendernessOf,
 } from './tenderness.js';
+
+/**
+ * The words a frost warning is made of.
+ *
+ * Also the single copy, and for the same reason. Her phone and the banner at
+ * the top of the app describe the same cold night, and they had drifted into
+ * two voices — the phone saying "Cover your Cherry Tomato in Tomato bed" while
+ * the app said "Your Cherry Tomato in Tomato bed are tender". Both now compose
+ * from here, so the next wording change lands on both at once.
+ *
+ * Runtime values, imported by both sides, which is only safe because the add-on
+ * image ships this package — see the header of `plants.ts`.
+ */
+export type { FrostSentences, FrostVoiceOptions } from './frostVoice.js';
+export { frostHeadline, frostSentences, joinNames } from './frostVoice.js';

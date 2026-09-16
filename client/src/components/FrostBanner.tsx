@@ -6,36 +6,64 @@
  * long before the night it matters. The severity is carried by the words and
  * the icon, not by the colour.
  *
- * What makes it worth reading is that it names *her* plants. "Frost Saturday
- * night" is what her phone's weather app already says. "Frost Saturday night,
- * 30°F — your Cherokee Purple and Black Beauty in Bed 1 are tender" is the part
- * that is only possible because the app knows what is in the ground.
+ * What makes it worth reading is that it names *her* plants, and says what to
+ * do about them. "Frost Saturday night" is what her phone's weather app already
+ * says; "Cover your Cherokee Purple and Black Beauty in Bed 1 — it'll be
+ * coldest around 5am" is the part that is only possible because the app knows
+ * what is in the ground.
  *
  * It also says what will be *fine*, which is most of the point. A warning that
- * only lists losses reads as alarm; one that says "your kale and onions will be
+ * only lists losses reads as alarm; one that says "the Lacinato Kale should be
  * fine" reads as somebody who knows the garden telling her which half to worry
- * about. And when there are squares it cannot classify, it says so rather than
+ * about. And when there are squares it cannot speak for, it says so rather than
  * quietly leaving them out — being honest about the gap is what makes the rest
  * of it trustworthy.
+ *
+ * ## The words come from `@hpt/shared`, and that is the point
+ *
+ * This banner and the notification on her phone describe the same cold night.
+ * They had drifted into two voices: the phone said "Cover your Cherry Tomato in
+ * Tomato bed", and this said "Your Cherry Tomato in Tomato bed are tender" — so
+ * the screen she was actually looking at, while deciding whether to go outside,
+ * was the one still speaking the old language. Both now compose from
+ * `frostSentences`, which is where any future wording change belongs.
+ *
+ * ## What this surface does differently, and why
+ *
+ * A notification is read on a lock screen, so it names at most three crops and
+ * three beds and gives whole sentences up to stay under a length ceiling. None
+ * of that applies here. This is a panel at the top of a page she has already
+ * chosen to look at, with room to spare, so it passes `Infinity` for both
+ * limits and renders every sentence it is given — including the two the
+ * notification drops first, which at a hard freeze are the ones saying that a
+ * cover will not save anything and that even the hardy crops may be hurt.
+ *
+ * The clock stays local to each surface: the server reads her zone from the
+ * `TZ` Supervisor injects into the add-on container, the browser reads the
+ * device. So `describeNight` and `describeTime` are here, deliberately
+ * duplicated from the server's, and the shared voice takes their output rather
+ * than reading a clock of its own.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Snowflake, X } from 'lucide-react';
-import type { BedAtRisk, FrostWatch } from '../types';
+import { frostHeadline, frostSentences } from '@hpt/shared';
+import type { FrostWatch } from '../types';
 import { useFrostWatch } from '../hooks/useFrostWatch';
 
 const DISMISSED_KEY = 'hpt.frostDismissed';
 
-/** English list: `a`, `a and b`, `a, b and c`. */
-function joinNames(names: readonly string[], limit = 3): string {
-  const shown = names.slice(0, limit);
-  const extra = names.length - shown.length;
-  const joined =
-    shown.length <= 1
-      ? (shown[0] ?? '')
-      : `${shown.slice(0, -1).join(', ')} and ${shown.at(-1)}`;
-
-  return extra > 0 ? `${joined} and ${extra} more` : joined;
-}
+/**
+ * The banner is not a lock screen, so it spends none of a lock screen's
+ * economies.
+ *
+ * Both limits exist in the shared voice because a notification has to fit. Here
+ * they would only hide garden she owns: five beds are five names, and "spread
+ * across 5 beds" tells her less than the list does while saving nothing worth
+ * saving. Listing every bed also retires the last of the double-`and` reading
+ * this file used to produce — "in Tomato bed, Bed 2 and Bed 3 and 2 more",
+ * which parses as a bed called "2 more".
+ */
+const ROOM_TO_LIST = { nameLimit: Infinity, bedLimit: Infinity };
 
 /** "Saturday night", "tonight" — how she would say it, not `2026-10-11`. */
 function describeNight(night: string, now = new Date()): string {
@@ -56,25 +84,15 @@ function describeNight(night: string, now = new Date()): string {
   return `the night of ${date.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}`;
 }
 
-/** "around 5am" — only when the forecast was hourly enough to know. */
-function describeTime(watch: FrostWatch): string | null {
-  if (watch.precision !== 'hour') return null;
+/** "5am" — only when the forecast was hourly enough to know; `''` when not. */
+function describeTime(watch: FrostWatch): string {
+  if (watch.precision !== 'hour') return '';
 
   const at = new Date(watch.expectedAt);
 
-  if (Number.isNaN(at.getTime())) return null;
+  if (Number.isNaN(at.getTime())) return '';
 
   return at.toLocaleTimeString(undefined, { hour: 'numeric' }).replace(/\s/g, '').toLowerCase();
-}
-
-const HEADLINE: Record<string, string> = {
-  advisory: 'Frost possible',
-  frost: 'Frost',
-  hard_freeze: 'Hard freeze',
-};
-
-function bedsWithTender(beds: readonly BedAtRisk[]): BedAtRisk[] {
-  return beds.filter((bed) => bed.tender.length > 0);
 }
 
 export function FrostBanner() {
@@ -117,15 +135,21 @@ export function FrostBanner() {
   }, [watch, dismissed]);
 
   if (watch === null) return null;
-  // `none` means cold is coming but nothing planted minds it. Nothing to say.
+  // `none` means cold is coming but nothing planted minds it. Nothing to say,
+  // so the "nothing you've planted should mind" sentence never reaches a
+  // screen from here.
   if (watch.severity === 'none') return null;
   if (dismissed === watch.eventKey) return null;
 
-  const when = describeNight(watch.night);
-  const time = describeTime(watch);
-  const beds = bedsWithTender(watch.bedsAtRisk);
-  const tender = joinNames(watch.tenderVarieties);
-  const bedNames = joinNames(beds.map((bed) => bed.bedName));
+  const headline = frostHeadline(watch, describeNight(watch.night));
+  const said = frostSentences(watch, describeTime(watch), ROOM_TO_LIST);
+
+  // The caveat explains the instruction it follows, so it stays in that
+  // paragraph. The aside is the hard-freeze counterpart of the reassurance —
+  // both answer "and what about everything else?" — so they share the second
+  // paragraph, and only one of them is ever set.
+  const instruction = [...said.lead, said.caveat].filter((sentence) => sentence !== '').join(' ');
+  const everythingElse = said.aside !== '' ? said.aside : said.reassurance;
 
   return (
     <div
@@ -137,35 +161,19 @@ export function FrostBanner() {
       </span>
 
       <div className="min-w-0 flex-1">
-        <h3 className="text-sm font-bold sm:text-base">
-          {HEADLINE[watch.severity] ?? 'Cold'} {when}, {Math.round(watch.lowF)}°F
-        </h3>
+        <h3 className="text-sm font-bold sm:text-base">{headline}</h3>
 
-        <p className="mt-1 max-w-prose text-sm leading-relaxed text-amber-800">
-          {tender !== '' ? (
-            <>
-              Your {tender}
-              {bedNames !== '' ? ` in ${bedNames}` : ''}{' '}
-              {watch.tenderVarieties.length === 1 ? 'is' : 'are'} tender.
-            </>
-          ) : (
-            <>Everything planted is at risk at this temperature.</>
-          )}
-          {time !== null && ` Coldest around ${time}.`}
-        </p>
+        <p className="mt-1 max-w-prose text-sm leading-relaxed text-amber-800">{instruction}</p>
 
-        {watch.severity !== 'hard_freeze' && watch.hardyVarieties.length > 0 && (
+        {everythingElse !== '' && (
           <p className="mt-1 max-w-prose text-sm leading-relaxed text-amber-800">
-            Your {joinNames(watch.hardyVarieties)} should be fine.
+            {everythingElse}
           </p>
         )}
 
-        {watch.unknownSquareCount > 0 && (
+        {said.unrecorded !== '' && (
           <p className="mt-1 max-w-prose text-sm leading-relaxed text-amber-700">
-            {watch.unknownSquareCount}{' '}
-            {watch.unknownSquareCount === 1 ? 'square has' : 'squares have'} no crop family
-            recorded, so this can&rsquo;t speak for{' '}
-            {watch.unknownSquareCount === 1 ? 'it' : 'them'}.
+            {said.unrecorded}
           </p>
         )}
       </div>

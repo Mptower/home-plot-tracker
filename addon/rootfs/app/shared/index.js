@@ -102,4 +102,5 @@ export { PLANT_CATALOGUE, categoryForVariety, matchPlant, normalizePlantName, pl
  * it". There is no second copy to drift.
  */
 export { CATEGORY_TENDERNESS, isKnownTendernessCategory, tendernessOf, } from './tenderness.js';
+export { frostHeadline, frostSentences, joinNames } from './frostVoice.js';
 //# sourceMappingURL=index.js.map

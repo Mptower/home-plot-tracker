@@ -696,8 +696,8 @@ add-on image had no `@hpt/shared` on disk. It does now, so
 not two that happen to agree.
 
 An unrecognised category is **never guessed at**. It cannot trigger a warning,
-but it is counted and shown, so the banner says "3 squares have no crop family
-recorded" rather than quietly speaking for them.
+but it is counted and shown, so the banner says "3 squares don't have a plant
+recorded, so they're not included" rather than quietly speaking for them.
 
 Below a hard freeze, a warning only appears if something tender is genuinely in
 the ground. A frost in April with nothing planted is not news.
@@ -760,6 +760,16 @@ know what a nightshade is to use the rest of the app, and she should not have to
 know what "tender" means to read her phone at ten at night. The hedges are kept
 — "should be fine", never "will be fine" — because this is a forecast and
 over-promising in a frost warning costs a crop.
+
+The banner at the top of the app says the same things in the same words, because
+both compose from [`shared/src/frostVoice.ts`](shared/src/frostVoice.ts). They
+used to be written separately and had drifted: the phone said *Cover your Cherry
+Tomato in Tomato bed* while the screen she was actually looking at, deciding
+whether to go outside, said *Your Cherry Tomato in Tomato bed are tender*. What
+the two surfaces still differ on is only what a lock screen can hold — the
+notification names at most three crops and three beds and gives whole sentences
+up to stay under 200 characters, while the banner has room and lists everything.
+Those are options on the shared module, not a second set of words.
 
 - One send per night. The forecast is read 96 times a day; this is the rule that
   stops that becoming 96 notifications.
