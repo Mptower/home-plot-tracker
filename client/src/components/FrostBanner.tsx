@@ -46,7 +46,8 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Snowflake, X } from 'lucide-react';
-import { frostHeadline, frostSentences } from '@hpt/shared';
+import { coldestHour, frostHeadline, frostSentences } from '@hpt/shared';
+import type { ColdestHour } from '@hpt/shared';
 import type { FrostWatch } from '../types';
 import { useFrostWatch } from '../hooks/useFrostWatch';
 
@@ -84,15 +85,22 @@ function describeNight(night: string, now = new Date()): string {
   return `the night of ${date.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}`;
 }
 
-/** "5am" — only when the forecast was hourly enough to know; `''` when not. */
-function describeTime(watch: FrostWatch): string {
-  if (watch.precision !== 'hour') return '';
+/**
+ * "5am" — only when the forecast was hourly enough to know; `''` when not.
+ *
+ * `ColdestHour`, not `string`: the shared voice builds the clause around this,
+ * so passing it the finished clause renders the preamble twice.
+ */
+function describeTime(watch: FrostWatch): ColdestHour {
+  if (watch.precision !== 'hour') return coldestHour('');
 
   const at = new Date(watch.expectedAt);
 
-  if (Number.isNaN(at.getTime())) return '';
+  if (Number.isNaN(at.getTime())) return coldestHour('');
 
-  return at.toLocaleTimeString(undefined, { hour: 'numeric' }).replace(/\s/g, '').toLowerCase();
+  return coldestHour(
+    at.toLocaleTimeString(undefined, { hour: 'numeric' }).replace(/\s/g, '').toLowerCase(),
+  );
 }
 
 export function FrostBanner() {

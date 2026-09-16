@@ -1,4 +1,4 @@
-import { frostHeadline, frostSentences } from '@hpt/shared';
+import { coldestHour, frostHeadline, frostSentences } from '@hpt/shared';
 import { readHaState, writeHaState } from "../db/haState.js";
 import { SEVERITY_RANK } from "./frost.js";
 const STATE_KEY = 'frost_notifications';
@@ -90,17 +90,19 @@ export function describeNight(night, now) {
  *
  * The bare hour rather than a finished sentence, because the caller builds it
  * into one of two shapes depending on what the opening clause already spent its
- * punctuation on.
+ * punctuation on. Returned as `ColdestHour` rather than `string` so that stays
+ * true of every caller: handing `frostSentences` the finished clause instead
+ * renders the preamble twice.
  */
 function describeTime(watch) {
     if (watch.precision !== 'hour')
-        return '';
+        return coldestHour('');
     const at = new Date(watch.expectedAt);
     if (Number.isNaN(at.getTime()))
-        return '';
+        return coldestHour('');
     // Ambient clock again: `expectedAt` is an instant, and this renders it as the
     // hour she will read on her own clock. See the note at the top of this file.
-    return at.toLocaleTimeString(undefined, { hour: 'numeric' }).replace(/\s/g, '').toLowerCase();
+    return coldestHour(at.toLocaleTimeString(undefined, { hour: 'numeric' }).replace(/\s/g, '').toLowerCase());
 }
 /**
  * Where a message stops being read.

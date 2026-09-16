@@ -105,5 +105,5 @@ export { PLANT_CATALOGUE, categoryForVariety, matchPlant, normalizePlantName, pl
  * the same reason: one map, one direction of travel.
  */
 export { CATEGORY_TENDERNESS, isKnownTendernessCategory, moreTender, tendernessOf, } from './tenderness.js';
-export { frostHeadline, frostSentences, joinNames } from './frostVoice.js';
+export { coldestHour, frostHeadline, frostSentences, isColdestHour, joinNames, } from './frostVoice.js';
 //# sourceMappingURL=index.js.map
