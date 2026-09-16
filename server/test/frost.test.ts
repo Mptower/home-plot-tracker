@@ -399,9 +399,15 @@ test('the forecast is found wherever the service response nests it', () => {
  * hardy, so the frost engine had nothing to warn her about, four weeks out from
  * first frost.
  *
+ * It no longer does. Her filing is still her filing — it is what the vault
+ * shows and what rotation counts — but for the single question of what
+ * temperature raises an alarm, an exact catalogue match gets a vote and the more
+ * tender answer wins. Being warned about a hardy plant costs her a walk outside;
+ * not being warned about this one costs her the only crop she has.
+ *
  * Nothing here can stop her typing a category by hand. What the catalogue does
- * is stop her having to, and offer to fix the rows already filed wrong. These
- * two cases are what "fixed" and "broken" look like from the server's side.
+ * is stop her having to, offer to fix the rows already filed wrong, and refuse
+ * to let a wrong one go quiet on a freezing night.
  */
 const HER_BED = bed({
   id: 'bed_tomato',
@@ -419,7 +425,11 @@ const HER_BED = bed({
 /** A night at 34°F: below the 36°F advisory band, above the 32°F frost band. */
 const HER_FORECAST = [point(ahead(1), 34, 'hour')];
 
-test('her tomato filed as a Leafy Green raises nothing, which is the defect', () => {
+test('her tomato filed as a Leafy Green is warned about anyway', () => {
+  // Her literal row, her real values, on a night at 34°F. `Leafy Green` is
+  // hardy and would have said nothing; `Cherry Tomato` is a whole-name match in
+  // the catalogue and is a nightshade, so the tender reading wins and her bed is
+  // named.
   const watch = assessFrostRisk({
     forecast: HER_FORECAST,
     beds: [HER_BED],
@@ -428,11 +438,40 @@ test('her tomato filed as a Leafy Green raises nothing, which is the defect', ()
     now: NOW,
   });
 
-  // The cold is seen and reported honestly, but nothing planted is believed to
-  // mind it, so she is never told and the tomatoes are lost.
+  assert.equal(watch?.severity, 'advisory');
+  assert.deepEqual(watch?.tenderVarieties, ['Cherry Tomato']);
+  assert.deepEqual(
+    watch?.bedsAtRisk.map((atRisk) => atRisk.bedName),
+    ['Tomato bed'],
+  );
+  // Classified, so not counted as a gap either.
+  assert.equal(watch?.unknownSquareCount, 0);
+});
+
+test('a genuinely hardy packet filed as a Leafy Green stays quiet', () => {
+  // The control, and the test that proves this is targeted rather than a
+  // blanket "warn about everything". Kale really is hardy, the catalogue agrees
+  // it is hardy, and 34°F is not worth getting her out of the house for.
+  const watch = assessFrostRisk({
+    forecast: HER_FORECAST,
+    beds: [
+      bed({
+        id: 'bed_greens',
+        name: 'Greens bed',
+        rows: 1,
+        columns: 1,
+        layout: [['Kale']],
+        lastYearCategory: '',
+      }),
+    ],
+    seeds: [seed({ id: 'seed_kale', variety: 'Kale', category: 'Leafy Green' })],
+    observedAt: NOW.toISOString(),
+    now: NOW,
+  });
+
   assert.equal(watch?.severity, 'none');
   assert.deepEqual(watch?.bedsAtRisk, []);
-  assert.deepEqual(watch?.tenderVarieties, []);
+  assert.equal(watch?.unknownSquareCount, 0);
 });
 
 test('the same tomato filed as a Nightshade names her bed', () => {

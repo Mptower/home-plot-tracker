@@ -89,7 +89,8 @@ jobs:
           echo "none, as expected"
 
       # The actual feature, exercised against the compiled files in the image:
-      # a variety with no seed packet behind it still resolves to a crop family.
+      # a variety with no seed packet behind it still resolves to a crop family,
+      # and a packet filed under the wrong family is still treated as tender.
       # This is the import that would have crashed the add-on on boot.
       - name: The frost engine can place a plant with no seed packet
         run: |
@@ -103,6 +104,32 @@ jobs:
             }
             if (lookup('Sugar Baby Watermelon') !== 'Cucurbit') throw new Error('catalogue fallback is not working in the image');
             if (lookup('Who Knows') !== null) throw new Error('the resolver is guessing');
+          "
+
+      # Julie's literal row, in the image she actually installs: a cherry tomato
+      # filed as a Leafy Green. The category stays as she filed it — the vault
+      # and the rotation reminder read that — while the frost engine takes the
+      # more tender of her filing and an exact catalogue match, so the warning
+      # she was not getting now happens. The kale line is the control: filed the
+      # same way, genuinely hardy, still hardy.
+      - name: A miscategorised packet is still treated as tender
+        run: |
+          docker exec --workdir /app/server hpt node --input-type=module --eval "
+            const { buildCategoryLookup, buildTendernessLookup } = await import('/app/server/ha/varietyCategory.js');
+            const seeds = [
+              { id: 's1', variety: 'Cherry Tomato', category: 'Leafy Green', brand: '', purchaseYear: 2026, notes: '' },
+              { id: 's2', variety: 'Kale', category: 'Leafy Green', brand: '', purchaseYear: 2026, notes: '' },
+            ];
+            const categoryOf = buildCategoryLookup(seeds);
+            const tendernessAt = buildTendernessLookup(seeds);
+            for (const variety of ['Cherry Tomato', 'cherry tomatoes', 'Kale', 'Who Knows']) {
+              console.log(variety, '-> filed', categoryOf(variety), '-> frost', tendernessAt(variety));
+            }
+            if (categoryOf('Cherry Tomato') !== 'Leafy Green') throw new Error('her filing was rewritten, which it must never be');
+            if (tendernessAt('Cherry Tomato') !== 'tender') throw new Error('her tomato would go unwarned at frost');
+            if (tendernessAt('cherry tomatoes') !== 'tender') throw new Error('a plural square would go unwarned at frost');
+            if (tendernessAt('Kale') !== 'hardy') throw new Error('the safety bias is over-reaching onto genuinely hardy plants');
+            if (tendernessAt('Who Knows') !== 'unknown') throw new Error('the resolver is guessing');
           "
 
       - name: Add-on log

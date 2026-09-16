@@ -15,8 +15,8 @@
  * existing import in `server/src/ha/` pointing at this file, which is where the
  * warnings come from and where somebody reading the frost engine will look.
  */
-import { CATEGORY_TENDERNESS, isKnownTendernessCategory, tendernessOf } from '@hpt/shared';
-export { CATEGORY_TENDERNESS, isKnownTendernessCategory, tendernessOf };
+import { CATEGORY_TENDERNESS, isKnownTendernessCategory, moreTender, tendernessOf, } from '@hpt/shared';
+export { CATEGORY_TENDERNESS, isKnownTendernessCategory, moreTender, tendernessOf };
 /**
  * Which of the given categories this mapping does not cover.
  *

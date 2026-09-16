@@ -19,8 +19,9 @@ import type {
   SeedPacket,
   Tenderness,
 } from '@hpt/shared';
-import { FROST_THRESHOLDS_F, tendernessOf } from './tenderness.ts';
-import { buildCategoryLookup } from './varietyCategory.ts';
+import { FROST_THRESHOLDS_F } from './tenderness.ts';
+import { buildTendernessLookup } from './varietyCategory.ts';
+import type { TendernessLookup } from './varietyCategory.ts';
 
 /** Rank for comparing bands. Only ever used for ordering, never persisted. */
 export const SEVERITY_RANK: Readonly<Record<FrostSeverity, number>> = {
@@ -88,8 +89,16 @@ interface BedTally {
   unknownSquares: number;
 }
 
-/** Distinct planted varieties in a bed, bucketed by how they take a frost. */
-function tallyBed(bed: GardenBed, categoryOf: (variety: string) => string | null): BedTally {
+/**
+ * Distinct planted varieties in a bed, bucketed by how they take a frost.
+ *
+ * Takes a tenderness resolver rather than a category one, because that is the
+ * only thing this file has any business knowing. Which crop family a square
+ * belongs to is her record to keep; how cold it can get before it dies is the
+ * question being asked here, and `buildTendernessLookup` is allowed to answer it
+ * more cautiously than her filing does.
+ */
+function tallyBed(bed: GardenBed, tendernessAt: TendernessLookup): BedTally {
   const seen = new Map<string, Tenderness>();
   let unknownSquares = 0;
 
@@ -103,7 +112,7 @@ function tallyBed(bed: GardenBed, categoryOf: (variety: string) => string | null
       const variety = cell.trim();
       if (variety === '') continue;
 
-      const tenderness = tendernessOf(categoryOf(variety));
+      const tenderness = tendernessAt(variety);
       if (tenderness === 'unknown') unknownSquares += 1;
       if (!seen.has(variety)) seen.set(variety, tenderness);
     }
@@ -182,8 +191,8 @@ export function assessFrostRisk(input: FrostAssessmentInput): FrostWatch | null 
   );
 
   const band = severityFor(coldest.lowF);
-  const categoryOf = buildCategoryLookup(input.seeds);
-  const tallies = input.beds.map((bed) => tallyBed(bed, categoryOf));
+  const tendernessAt = buildTendernessLookup(input.seeds);
+  const tallies = input.beds.map((bed) => tallyBed(bed, tendernessAt));
 
   // What counts as "at risk" depends on the band. Below 28°F the hardy crops
   // are in trouble too, so any planted bed is named. Above that, only tender

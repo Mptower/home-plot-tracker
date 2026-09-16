@@ -663,6 +663,28 @@ category she set herself. Anything none of them can place stays `unknown`,
 raises no warning, and is counted in `unknownSquareCount` so the banner can be
 honest about the gap.
 
+**For the cold question only, a wrong category cannot silence a warning.** That
+resolved family is what the Seed Vault shows and what crop rotation counts, and
+it is hers. But she had filed a cherry tomato as a `Leafy Green` — an entirely
+reasonable thing to do with a leafy plant — and `Leafy Green` is hardy, so the
+engine had nothing to say on a 34 °F night about the only crop she was growing.
+So tenderness is resolved separately, as the **more tender** of her filed
+category and an *exact* plant-catalogue match, and the bias is one-way: it can
+move a plant from hardy towards tender and never back. Under-warning costs the
+crop; over-warning costs a walk outside with a bedsheet.
+
+It is deliberately narrow. Only a whole-name catalogue hit counts, the same bar
+the correction banner holds itself to — a substring match would read "Chocolate
+Cherry" as a berry. It yields a tenderness and never a category, so crop
+rotation and the vault keep reading exactly what she filed. And `unknown` is
+never promoted: a square nothing can place has no exact match either, so it
+stays unknown and stays silent. Kale filed as a `Leafy Green` is still hardy and
+still raises nothing, which is what makes this a safety net rather than a
+blanket "warn about everything". It lives in
+[`server/src/ha/varietyCategory.ts`](server/src/ha/varietyCategory.ts), and
+`moreTender` is in [`shared/src/tenderness.ts`](shared/src/tenderness.ts)
+beside the map it orders.
+
 Each category maps to a tenderness:
 
 | Tenderness | Categories                                       |
@@ -946,8 +968,8 @@ HTTP and SQLite rather than mocks of them. Coverage:
 | `transactions.test.ts`  | a failed write leaving the previous collection intact       |
 | `static.test.ts`        | cache headers, SPA fallback, mounting under a prefix        |
 | `frost.test.ts`         | the tenderness map, the three bands, which night a low belongs to, and the miscategorised-tomato regression |
-| `variety-category.test.ts` | resolving a bed square to a crop family: vault exactly, vault tolerantly, catalogue, then nothing |
-| `tenderness.test.ts`    | the server's tenderness map being the shared one, not a copy of it |
+| `variety-category.test.ts` | resolving a bed square to a crop family: vault exactly, vault tolerantly, catalogue, then nothing — and the frost-only tenderness fail-safe: her row warned while still filed `Leafy Green`, kale filed the same way staying hardy, the bias one-way, loose matches declining to override |
+| `tenderness.test.ts`    | the server's tenderness map being the shared one, not a copy of it, and `moreTender` never travelling back towards hardy |
 | `shared-imports.test.ts` | the add-on image actually shipping `@hpt/shared`: declared, locked, staged, resolvable and not git-ignored |
 | `ha-sensors.test.ts`    | the exact published payloads, rounding, the collision guard |
 | `ha-notify.test.ts`     | one per snap, escalation, quiet hours, surviving a restart, and the exact wording of every branch of the message |
@@ -1100,8 +1122,13 @@ she just picks the family herself, as before.
 **Category corrections.** When the catalogue recognises a variety outright and
 the stored category disagrees, an indigo banner offers a one-click fix, naming
 the consequence rather than the taxonomy: _"Leafy Green is treated as
-frost-hardy, so you are not being warned about this one. Nightshade is tender."_
-Fixes that change the frost advice sort first. Nothing is ever rewritten
+frost-hardy. You are still warned about this one, because the frost check
+recognises the name and errs towards tender — but it is the name carrying that,
+not your records, and the rotation reminder still counts this bed as Leafy
+Green."_ Fixes the frost engine treats differently sort first. The fail-safe
+above is why that sentence no longer claims she is unwarned, and why the banner
+still matters: the net only reaches names the catalogue knows outright, and the
+category is what rotation is actually built on. Nothing is ever rewritten
 automatically and there is no upgrade migration — the records are hers, and
 "Keep mine" is remembered per device. Corrections are offered only on exact
 catalogue matches, a deliberately narrower rule than the autofill uses:

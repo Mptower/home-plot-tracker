@@ -39,6 +39,8 @@
  * `Leafy Green` stays a leafy green even if the catalogue is certain it is a
  * tomato. Silently overruling her would make `CategoryFixBanner` — which exists
  * precisely to offer that correction, and to explain what it costs her — a lie.
+ * That is true of the *category*, which is what everything below reads; frost
+ * tenderness is a separate question with a separate answer, further down.
  *
  * With one exception, which is not really an exception: a packet whose category
  * is a string the tenderness map has never heard of (free text from before the
@@ -59,17 +61,69 @@
  * guessing. `matchPlant` already stops at whole-word spans and returns `null`
  * rather than a guess; this file does not loosen that. `unknown` is honest, and
  * a confident wrong answer is not.
+ *
+ * ## Which family, and how it takes a frost, are different questions
+ *
+ * Everything above answers the first one, and that is the answer everything
+ * except the frost engine wants. A category is a crop family: it colours a chip,
+ * it files a packet in the vault, and it is what the rotation warning compares
+ * against what grew in the bed last year. Those are all statements about her
+ * records, and her records are hers.
+ *
+ * `buildTendernessLookup` answers the second, and it is allowed to disagree.
+ * She filed her cherry tomatoes as a `Leafy Green` — an entirely reasonable
+ * thing to do with a leafy plant, especially when the form that took that row
+ * asked a home gardener for a botanical family and offered no list to pick
+ * from. `Leafy Green` is hardy, so the frost engine had nothing to say, and her
+ * only crop went into first frost unwarned while both a seed packet and a
+ * catalogue entry sat there with the word "Tomato" in them.
+ *
+ * So for tenderness *only*, her filing and an exact catalogue match are both
+ * consulted and the more tender of the two wins. The bias is one-way — it may
+ * move a plant from hardy towards tender and never the reverse — because the two
+ * mistakes are not the same size. Under-warning costs the crop on a night the
+ * forecast already saw coming. Over-warning costs a walk outside with a
+ * bedsheet.
+ *
+ * Three things stop that becoming a blanket "warn about everything":
+ *
+ *   * **Exact matches only.** `matchPlant` will find a known plant inside a
+ *     longer name, and that is not a good enough reason to overrule a decision
+ *     she made months ago: "Chocolate Cherry" is a cherry tomato, and a
+ *     `contains` match reads the word "cherry" and calls it fruit. Only a
+ *     whole-name hit counts. That still covers her row, and it still covers a
+ *     plural or differently-cased square, because "cherry tomatoes" is one of
+ *     the keys the catalogue generates for `Cherry Tomato` itself.
+ *   * **It never produces a category.** The bias returns a `Tenderness` and
+ *     nothing else, so there is no category here for rotation, a badge or the
+ *     vault to pick up by accident. Kale filed as a `Leafy Green` is still a
+ *     leafy green everywhere it is shown or rotated on — and still hardy, too,
+ *     because on that packet the two answers agree.
+ *   * **Unknown is never promoted.** A square nothing can place has no exact
+ *     match either, so there is nothing to compare it against: it stays
+ *     `unknown`, is counted as such, and still raises nothing.
+ *
+ * This is a safety net, not a repair. `CategoryFixBanner` still offers to
+ * correct the row and correcting it is still the goal — the net only reaches
+ * names the catalogue knows outright, and the category is what her rotation is
+ * actually built on.
  */
-import type { SeedPacket } from '@hpt/shared';
+import type { SeedPacket, Tenderness } from '@hpt/shared';
 import {
   categoryForVariety,
   isKnownTendernessCategory,
+  matchPlant,
+  moreTender,
   normalizePlantName,
   plantLookupKeys,
+  tendernessOf,
 } from '@hpt/shared';
 
 /** Resolves a bed square's variety name to a crop family, or `null`. */
 export type CategoryLookup = (variety: string) => string | null;
+
+/** Resolves a bed square's variety name to how badly it minds the cold. */
+export type TendernessLookup = (variety: string) => Tenderness;
 
 /**
  * Every tolerant spelling of a seed packet's variety name.
@@ -142,5 +196,40 @@ export function buildCategoryLookup(seeds: readonly SeedPacket[]): CategoryLooku
     if (normalized === '') return null;
 
     return tolerant.get(normalized) ?? categoryForVariety(variety);
+  };
+}
+
+/**
+ * How a bed square takes a frost, erring towards the tender answer.
+ *
+ * The frost engine's resolver, and the only caller of it. Everything else in the
+ * app asks `buildCategoryLookup` and gets the category she filed, unchanged.
+ *
+ * Her filing is resolved exactly as it always was, and then — and only then —
+ * checked against the catalogue's opinion of the same square. The catalogue only
+ * gets a vote when it recognises the *whole* name, because overruling her
+ * deserves a higher bar than filling in a blank and the substring matcher does
+ * not clear it. When both have an answer and they disagree, the more tender one
+ * wins.
+ *
+ * Note what this does *not* do. It cannot talk the frost engine out of a
+ * warning: where she has filed something tender and the catalogue disagrees,
+ * `moreTender` has no way to travel back. It does not invent a reading for a
+ * square nothing places. And it hands back no category at all, which is what
+ * keeps crop rotation reading her records rather than this file's opinion of
+ * them.
+ */
+export function buildTendernessLookup(seeds: readonly SeedPacket[]): TendernessLookup {
+  const categoryOf = buildCategoryLookup(seeds);
+
+  return (variety) => {
+    const filed = tendernessOf(categoryOf(variety));
+    const match = matchPlant(variety);
+
+    // A `contains` match is a guess about which word in the name is the plant,
+    // and a guess is not grounds for overriding something she typed herself.
+    if (match === null || match.confidence !== 'exact') return filed;
+
+    return moreTender(filed, tendernessOf(match.entry.category));
   };
 }
